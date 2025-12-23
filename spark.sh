@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.2.0 - Surgical Precision CLI Updater
+# SPARK v0.2.1 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -54,12 +54,13 @@ TOOLS=(
     "SYS:npm:npm:NPM Globals:npm_sys"
 )
 
-# Global Counters
+# Global Counters & Storage
 CODE_UPDATES_COUNT=0
 TERM_UPDATES_COUNT=0
 UTILS_UPDATES_COUNT=0
 RUNTIME_UPDATES_COUNT=0
 SYS_UPDATES_COUNT=0
+UPDATED_TOOLS=()
 
 # --- Helper Functions ---
 
@@ -72,7 +73,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.0${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.1${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -130,10 +131,6 @@ get_remote_version() {
     elif [[ "$method" == "mac_app" ]]; then
         brew info --cask "$package" 2>/dev/null | head -n 1 | awk '{print $2}'
     elif [[ "$method" == "brew_pkg" ]]; then
-        # For brew packages, try to get info. 
-        # Caution: 'brew info' can be slow if run for every package.
-        # Optimizing: We assume checking outdated status via 'analyze_system' logic if we implemented 'brew outdated' parsing, 
-        # but here we stick to simple consistent checks.
         echo "Latest" 
     else
         echo "Latest"
@@ -153,7 +150,8 @@ check_active_sessions() {
             [[ "$binary" == "ghostty" ]] && proc="Ghostty"
             [[ "$binary" == "python3" ]] && proc="python"
             
-            if pgrep -fi "$proc" > /dev/null; then
+            if pgrep -fi "$proc" > /dev/null;
+ then
                 if [[ $active_found -eq 0 ]]; then
                     echo -e "${YELLOW}${BOLD}⚠️  Active Sessions Detected:${RESET}"
                     active_found=1
@@ -203,9 +201,6 @@ analyze_system() {
                     target=$(get_remote_version "$method" "$pkg")
                     
                     if [[ "$target" == "Latest" ]]; then
-                        # If target is Latest (Brew default here), we assume up to date unless we do a deep check
-                        # To improve utility without slowing down, we mark as Green by default unless known update
-                        # Ideally, we would parse 'brew outdated' output here.
                         needs_update=0 
                     elif [[ "$target" != "-" ]] && [[ "$current" != "$target" ]]; then
                         needs_update=1
@@ -214,10 +209,6 @@ analyze_system() {
                     fi
                 fi
                 
-                # Logic Fix: For Brew packages where we return "Latest", we can't easily know if update needed without `brew outdated`.
-                # So the count might be inaccurate for Brew Utils/Runtimes in this fast mode. 
-                # Future improvement: Run `brew outdated --json` once at start.
-
                 if [[ $needs_update -eq 1 ]]; then
                     [[ "$category" == "CODE" ]] && ((CODE_UPDATES_COUNT++))
                     [[ "$category" == "TERM" ]] && ((TERM_UPDATES_COUNT++))
@@ -257,22 +248,45 @@ perform_update() {
 
     echo -e "${BOLD}${CYAN}⚡ Updating $name...${RESET}"
 
+    local success=0
     case $method in
-        brew) brew update && brew upgrade && brew cleanup ;; 
-        npm_sys) npm update -g ;; 
-        npm_pkg) npm install -g "$pkg@latest" ;; 
-        droid) curl -fsSL https://app.factory.ai/cli | sh ;; 
-        opencode) opencode upgrade || curl -fsSL https://opencode.ai/install | bash ;; 
-        brew_pkg) brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}" ;; 
+        brew) brew update && brew upgrade && brew cleanup && success=1 ;;
+        npm_sys) npm update -g && success=1 ;;
+        npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
+        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
+        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
+        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;;
         mac_app)
-            if brew list --cask "$pkg" &>/dev/null; then
-                brew upgrade --cask "$pkg"
+            if brew list --cask "$pkg" &>/dev/null;
+ then
+                brew upgrade --cask "$pkg" && success=1
             else
                 echo -e "${YELLOW}   ! $name is not managed by Homebrew.${RESET}"
             fi
             ;; 
         *) echo "   No update method found." ;; 
     esac
+
+    if [ $success -eq 1 ]; then
+        echo -e "${GREEN}   ✔ Success${RESET}\n"
+        # Record update for summary
+        local ver_msg="$current -> $target"
+        UPDATED_TOOLS+=("$name ($ver_msg)")
+    else
+        echo -e "${RED}   ✘ Error updating $name${RESET}\n"
+    fi
+}
+
+show_summary() {
+    echo -e "${BOLD}--- SPARK UPDATE SUMMARY ---${RESET}"
+    if [ ${#UPDATED_TOOLS[@]} -eq 0 ]; then
+        echo -e "${DIM}No tools were updated.${RESET}"
+    else
+        for tool in "${UPDATED_TOOLS[@]}"; do
+            echo -e "${GREEN}[✔] $tool${RESET}"
+        done
+    fi
+    echo ""
 }
 
 # --- Main Logic ---
@@ -289,7 +303,7 @@ echo -e "  ${BOLD}[5]${RESET} Exit"
 echo ""
 
 read -p "Select option [1]: " mode
-mode=${mode:-1} # Default to 1
+mode=${mode:-1}
 
 if [[ "$mode" == "5" ]]; then echo "Bye!"; exit 0; fi
 
@@ -330,4 +344,5 @@ for tool_entry in "${TOOLS[@]}"; do
     fi
 done
 
+show_summary
 echo -e "${BOLD}${GREEN}✨ Spark Sequence Complete.${RESET}"
