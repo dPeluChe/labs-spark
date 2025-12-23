@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.2.1 - Surgical Precision CLI Updater
+# SPARK v0.2.2 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -73,7 +73,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.1${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.2${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -89,7 +89,8 @@ get_local_version() {
         [ -d "/Applications/Warp.app" ] && defaults read /Applications/Warp.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
     fi
 
-    if ! command -v "$binary" &> /dev/null; then
+    if ! command -v "$binary" &> /dev/null;
+ then
         echo "MISSING"
         return
     fi
@@ -129,7 +130,8 @@ get_remote_version() {
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
         npm view "$package" version 2>/dev/null
     elif [[ "$method" == "mac_app" ]]; then
-        brew info --cask "$package" 2>/dev/null | head -n 1 | awk '{print $2}'
+        # Use $3 to extract version from "==> Name: Version (variant)"
+        brew info --cask "$package" 2>/dev/null | head -n 1 | awk '{print $3}'
     elif [[ "$method" == "brew_pkg" ]]; then
         echo "Latest" 
     else
@@ -250,12 +252,12 @@ perform_update() {
 
     local success=0
     case $method in
-        brew) brew update && brew upgrade && brew cleanup && success=1 ;;
-        npm_sys) npm update -g && success=1 ;;
-        npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
-        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
-        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
-        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;;
+        brew) brew update && brew upgrade && brew cleanup && success=1 ";;"
+        npm_sys) npm update -g && success=1 ";;"
+        npm_pkg) npm install -g "$pkg@latest" && success=1 ";;"
+        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ";;"
+        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ";;"
+        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ";;"
         mac_app)
             if brew list --cask "$pkg" &>/dev/null;
  then
