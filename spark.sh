@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.2.4 - Surgical Precision CLI Updater
+# SPARK v0.2.5 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -73,7 +73,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.4${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.5${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -89,7 +89,8 @@ get_local_version() {
         [ -d "/Applications/Warp.app" ] && defaults read /Applications/Warp.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
     fi
 
-    if ! command -v "$binary" &> /dev/null; then
+    if ! command -v "$binary" &> /dev/null;
+ then
         echo "MISSING"
         return
     fi
@@ -130,15 +131,10 @@ get_remote_version() {
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
         npm view "$package" version 2>/dev/null
     elif [[ "$method" == "brew_pkg" ]] || [[ "$method" == "mac_app" ]]; then
-        # Intelligent Brew Check using pre-fetched cache
-        # grep format from 'brew outdated --verbose': "package (old) < new"
         local update_info=$(echo "$BREW_CACHE" | grep "^$package ")
-        
         if [[ -n "$update_info" ]]; then
-            # Extract the last field (target version)
             echo "$update_info" | awk '{print $NF}'
         else
-            # Not in outdated list = Up to date
             echo "$local_ver"
         fi
     else
@@ -177,9 +173,7 @@ check_active_sessions() {
 
 analyze_system() {
     echo -e "${BOLD}Analyzing System Components...${RESET}"
-    
-    # Pre-fetch Homebrew data
-    echo -e "${DIM}   Fetching Homebrew intelligence (this may take a moment)...${RESET}"
+    echo -e "${DIM}   Fetching Homebrew intelligence...${RESET}"
     BREW_CACHE=$(brew outdated --verbose)
     
     printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
@@ -202,6 +196,7 @@ analyze_system() {
                 local current=$(get_local_version "$binary")
                 local icon=""
                 local target="-"
+                local target_display="-"
                 local color=""
                 local needs_update=0
 
@@ -215,11 +210,16 @@ analyze_system() {
                     target=$(get_remote_version "$method" "$pkg" "$current")
                     
                     if [[ "$target" == "Latest" ]]; then
+                        target_display="Manual Check"
                         needs_update=0 
                     elif [[ "$target" != "-" ]] && [[ "$current" != "$target" ]]; then
                         needs_update=1
                         color="${YELLOW}"
                         icon="${YELLOW}↑${RESET}"
+                        target_display="${MAGENTA}$target${RESET}"
+                    else
+                        # Current == Target (Up to date)
+                        target_display="${DIM}✔ Up to date${RESET}"
                     fi
                 fi
                 
@@ -231,7 +231,7 @@ analyze_system() {
                     [[ "$category" == "SYS" ]] && ((SYS_UPDATES_COUNT++))
                 fi
 
-                printf "% -13b ${color}%-18s %-15s ${MAGENTA}%-15s${RESET}\n" "$icon" "$display" "$current" "$target"
+                printf "% -13b ${color}%-18s %-15s %b${RESET}\n" "$icon" "$display" "$current" "$target_display"
             fi
         done
     }
@@ -255,8 +255,8 @@ perform_update() {
     local current=$4
     local target=$5
 
-    if [[ "$target" != "Latest" ]] && [[ "$target" != "-" ]] && [[ "$current" == "$target" ]]; then
-         echo -e "${DIM}   ○ $name is up to date ($current). Skipped.${RESET}"
+    if [[ "$target" == "$current" ]]; then
+         echo -e "${DIM}   ○ $name is already up to date. Skipped.${RESET}"
          return
     fi
 
@@ -270,7 +270,7 @@ perform_update() {
         droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
         opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
         brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;;
-        mac_app)
+        mac_app) 
             if brew list --cask "$pkg" &>/dev/null;
  then
                 brew upgrade --cask "$pkg" && success=1
@@ -283,8 +283,7 @@ perform_update() {
 
     if [ $success -eq 1 ]; then
         echo -e "${GREEN}   ✔ Success${RESET}\n"
-        local ver_msg="$current -> $target"
-        UPDATED_TOOLS+=("$name ($ver_msg)")
+        UPDATED_TOOLS+=("$name ($current -> $target)")
     else
         echo -e "${RED}   ✘ Error updating $name${RESET}\n"
     fi
@@ -342,7 +341,6 @@ echo -e "\n${BOLD}Starting Update Sequence...${RESET}\n"
 for tool_entry in "${TOOLS[@]}"; do
     IFS=':' read -r category binary pkg display method <<< "$tool_entry"
     
-    # Matching Logic
     MATCH=0
     if [[ "$TARGET_CATEGORY" == "ALL" ]]; then MATCH=1; fi
     if [[ "$TARGET_CATEGORY" == "CODE_TERM" ]] && ([[ "$category" == "CODE" ]] || [[ "$category" == "TERM" ]]); then MATCH=1; fi
