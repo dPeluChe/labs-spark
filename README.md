@@ -6,6 +6,7 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 
 ## 🚀 Features
 
+- **v0.2.4 Real-Time Intelligence**: Pre-fetches accurate upgrade data from Homebrew to distinguish between "Latest" and actual available versions.
 - **v0.2.1 Summary Report**: Displays a clean summary of all updated tools and version changes at the end of the process.
 - **v0.2.0 Surgical Precision**: Categorized updates into AI Tools, Utilities, and Critical Runtimes.
 - **v0.2.0 Runtime Safety**: Adds a "Danger Zone" confirmation before updating sensitive runtimes like Node.js or Python.

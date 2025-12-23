@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.2.3 - Surgical Precision CLI Updater
+# SPARK v0.2.4 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -16,7 +16,6 @@ RESET="\033[0m"
 
 # Tools Configuration
 # Format: "CATEGORY:BinaryName:PackageName:DisplayName:UpdateMethod"
-# Categories: CODE (AI), TERM (Terminals), UTILS (Safe Tools), RUNTIME (Sensitive), SYS (Managers)
 TOOLS=(
     # AI Development
     "CODE:claude:@anthropic-ai/claude-code:Claude CLI:npm_pkg"
@@ -54,13 +53,14 @@ TOOLS=(
     "SYS:npm:npm:NPM Globals:npm_sys"
 )
 
-# Global Counters & Storage
+# Global Storage
 CODE_UPDATES_COUNT=0
 TERM_UPDATES_COUNT=0
 UTILS_UPDATES_COUNT=0
 RUNTIME_UPDATES_COUNT=0
 SYS_UPDATES_COUNT=0
 UPDATED_TOOLS=()
+BREW_CACHE=""
 
 # --- Helper Functions ---
 
@@ -73,7 +73,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.3${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.4${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -89,8 +89,7 @@ get_local_version() {
         [ -d "/Applications/Warp.app" ] && defaults read /Applications/Warp.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
     fi
 
-    if ! command -v "$binary" &> /dev/null;
- then
+    if ! command -v "$binary" &> /dev/null; then
         echo "MISSING"
         return
     fi
@@ -126,14 +125,22 @@ get_local_version() {
 get_remote_version() {
     local method=$1
     local package=$2
+    local local_ver=$3
     
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
         npm view "$package" version 2>/dev/null
-    elif [[ "$method" == "mac_app" ]]; then
-        # Use $3 to extract version from "==> Name: Version (variant)"
-        brew info --cask "$package" 2>/dev/null | head -n 1 | awk '{print $3}'
-    elif [[ "$method" == "brew_pkg" ]]; then
-        echo "Latest" 
+    elif [[ "$method" == "brew_pkg" ]] || [[ "$method" == "mac_app" ]]; then
+        # Intelligent Brew Check using pre-fetched cache
+        # grep format from 'brew outdated --verbose': "package (old) < new"
+        local update_info=$(echo "$BREW_CACHE" | grep "^$package ")
+        
+        if [[ -n "$update_info" ]]; then
+            # Extract the last field (target version)
+            echo "$update_info" | awk '{print $NF}'
+        else
+            # Not in outdated list = Up to date
+            echo "$local_ver"
+        fi
     else
         echo "Latest"
     fi
@@ -170,6 +177,11 @@ check_active_sessions() {
 
 analyze_system() {
     echo -e "${BOLD}Analyzing System Components...${RESET}"
+    
+    # Pre-fetch Homebrew data
+    echo -e "${DIM}   Fetching Homebrew intelligence (this may take a moment)...${RESET}"
+    BREW_CACHE=$(brew outdated --verbose)
+    
     printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
     echo "--------------------------------------------------------"
 
@@ -200,7 +212,7 @@ analyze_system() {
                 else
                     icon="${GREEN}●${RESET}"
                     color="${RESET}"
-                    target=$(get_remote_version "$method" "$pkg")
+                    target=$(get_remote_version "$method" "$pkg" "$current")
                     
                     if [[ "$target" == "Latest" ]]; then
                         needs_update=0 
@@ -271,7 +283,6 @@ perform_update() {
 
     if [ $success -eq 1 ]; then
         echo -e "${GREEN}   ✔ Success${RESET}\n"
-        # Record update for summary
         local ver_msg="$current -> $target"
         UPDATED_TOOLS+=("$name ($ver_msg)")
     else
@@ -340,7 +351,7 @@ for tool_entry in "${TOOLS[@]}"; do
     if [[ $MATCH -eq 1 ]]; then
         if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]]; then
             current=$(get_local_version "$binary")
-            target=$(get_remote_version "$method" "$pkg")
+            target=$(get_remote_version "$method" "$pkg" "$current")
             perform_update "$method" "$display" "$pkg" "$current" "$target"
         fi
     fi
