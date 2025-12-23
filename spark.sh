@@ -18,13 +18,14 @@ RESET="\033[0m"
 # Format: "CATEGORY:BinaryName:PackageName:DisplayName:UpdateMethod"
 # Categories: CODE (AI/Dev tools), SYS (System managers like brew/npm)
 TOOLS=(
+    "CODE:claude:@anthropic-ai/claude-code:Claude CLI:npm_pkg"
     "CODE:droid:factory-cli:Droid CLI:droid"
     "CODE:gemini:@google/gemini-cli:Gemini CLI:npm_pkg"
     "CODE:opencode:opencode-ai:OpenCode:opencode"
     "CODE:codex:@openai/codex:Codex CLI:npm_pkg"
+    "CODE:crush:crush:Crush CLI:brew_pkg"
     "SYS:brew:homebrew:Homebrew:brew"
     "SYS:npm:npm:NPM Globals:npm_sys"
-    "SYS:crush:crush:Crush CLI:brew_pkg"
 )
 
 # --- Helper Functions ---
@@ -54,6 +55,8 @@ get_local_version() {
         ver=$(brew --version | head -n 1 | awk '{print $2}')
     elif [[ "$binary" == "npm" ]]; then
         ver=$(npm --version)
+    elif [[ "$binary" == "claude" ]]; then
+         ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}') || ver="Unknown"
     elif [[ "$binary" == "droid" ]]; then
         # Droid doesn't always expose version easily, strictly checking
         ver="Installed"
