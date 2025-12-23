@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v2.0 - Intelligent CLI Updater
+# SPARK v0.1.1 - Intelligent CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -28,6 +28,10 @@ TOOLS=(
     "SYS:npm:npm:NPM Globals:npm_sys"
 )
 
+# Global Counters
+CODE_UPDATES_COUNT=0
+SYS_UPDATES_COUNT=0
+
 # --- Helper Functions ---
 
 banner() {
@@ -39,8 +43,8 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  System Intelligence & Update Utility v2.0${RESET}"
-    echo -e "${DIM}  =========================================${RESET}\n"
+    echo -e "${BLUE}  System Intelligence & Update Utility v0.1.1${RESET}"
+    echo -e "${DIM}  ===========================================${RESET}\n"
 }
 
 get_local_version() {
@@ -56,9 +60,13 @@ get_local_version() {
     elif [[ "$binary" == "npm" ]]; then
         ver=$(npm --version)
     elif [[ "$binary" == "claude" ]]; then
-         ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}') || ver="Unknown"
+         # Try direct version flag first, fallback to npm list
+         ver=$($binary --version 2>/dev/null | awk '{print $NF}')
+         if [[ -z "$ver" ]]; then
+            ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}')
+         fi
     elif [[ "$binary" == "droid" ]]; then
-        # Droid doesn't always expose version easily, strictly checking
+        # Droid doesn't always expose version easily
         ver="Installed"
     elif [[ "$binary" == "opencode" ]]; then
         ver=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $3}') || ver="Installed"
@@ -69,6 +77,9 @@ get_local_version() {
     else
         ver=$($binary --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Detected"
     fi
+    
+    # Final cleanup
+    if [[ -z "$ver" ]]; then ver="Detected"; fi
     echo "$ver"
 }
 
@@ -77,54 +88,47 @@ get_remote_version() {
     local package=$2
     
     # Only fetch remote versions for NPM packages to keep script fast.
-    # Fetching Brew or Curl versions remotely is too slow/complex for a quick CLI check.
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
-        echo $(npm view "$package" version 2>/dev/null)
+        local remote=$(npm view "$package" version 2>/dev/null)
+        echo "$remote"
     else
         echo "Latest"
     fi
 }
 
-perform_update() {
-    local method=$1
-    local name=$2
-    local pkg=$3
-
-    echo -e "${DIM}   Executing update strategy for $name...${RESET}"
-
-    case $method in
-        brew)
-            brew update && brew upgrade && brew cleanup
-            ;; 
-        npm_sys)
-            npm update -g
-            ;; 
-        npm_pkg)
-            npm install -g "$pkg@latest"
-            ;; 
-        droid)
-            curl -fsSL https://app.factory.ai/cli | sh
-            ;; 
-        opencode)
-            opencode upgrade || curl -fsSL https://opencode.ai/install | bash
-            ;; 
-        brew_pkg) 
-             brew upgrade "$pkg" 2>/dev/null || echo "   Already latest or not managed by brew"
-            ;; 
-        *)
-            echo "   No update method found."
-            ;; 
-    esac
+check_active_sessions() {
+    local active_found=0
+    
+    echo -e "${DIM}Checking for active sessions...${RESET}"
+    
+    for tool_entry in "${TOOLS[@]}"; do
+        IFS=':' read -r category binary pkg display method <<< "$tool_entry"
+        
+        if command -v "$binary" &> /dev/null; then
+            # pgrep -f matches the full command line
+            if pgrep -f "$binary" > /dev/null; then
+                if [[ $active_found -eq 0 ]]; then
+                    echo -e "${YELLOW}${BOLD}⚠️  Active Sessions Detected:${RESET}"
+                    active_found=1
+                fi
+                echo -e "   - $display is currently running"
+            fi
+        fi
+done
+    
+    if [[ $active_found -eq 1 ]]; then
+        echo -e "${YELLOW}   Updating running tools may cause interruptions.${RESET}\n"
+    fi
 }
-
-# --- Main Logic ---
-
-banner
 
 analyze_system() {
     echo -e "${BOLD}Analyzing System Components...${RESET}"
     printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
     echo "--------------------------------------------------------"
+
+    # Reset counters
+    CODE_UPDATES_COUNT=0
+    SYS_UPDATES_COUNT=0
 
     # Function to print a category group
     print_group() {
@@ -141,6 +145,7 @@ analyze_system() {
                 local icon=""
                 local target="-"
                 local color=""
+                local needs_update=0
 
                 if [[ "$current" == "MISSING" ]]; then
                     icon="${DIM}○${RESET}"
@@ -149,12 +154,29 @@ analyze_system() {
                 else
                     icon="${GREEN}●${RESET}"
                     color="${RESET}"
-                    # Only check target if installed
                     target=$(get_remote_version "$method" "$pkg")
+                    
+                    # Logic to determine if update is needed
+                    if [[ "$target" == "Latest" ]]; then
+                        # Cannot determine version parity, assume update might be needed or manual check
+                        needs_update=1 
+                    elif [[ "$target" != "-" ]] && [[ "$current" != "$target" ]]; then
+                        needs_update=1
+                        color="${YELLOW}"
+                        icon="${YELLOW}↑${RESET}"
+                    elif [[ "$current" == "$target" ]]; then
+                        color="${GREEN}"
+                    fi
+                fi
+
+                # Increment Counters
+                if [[ $needs_update -eq 1 ]]; then
+                    if [[ "$category" == "CODE" ]]; then ((CODE_UPDATES_COUNT++)); fi
+                    if [[ "$category" == "SYS" ]]; then ((SYS_UPDATES_COUNT++)); fi
                 fi
 
                 # Visual Table Row
-                printf "%-13b ${color}%-18s %-15s ${MAGENTA}%-15s${RESET}\n" "$icon" "$display" "$current" "$target"
+                printf "% -13b ${color}%-18s %-15s ${MAGENTA}%-15s${RESET}\n" "$icon" "$display" "$current" "$target"
             fi
         done
     }
@@ -165,24 +187,75 @@ analyze_system() {
     echo ""
 }
 
+perform_update() {
+    local method=$1
+    local name=$2
+    local pkg=$3
+    local current=$4
+    local target=$5
+
+    # Smart Skip Logic
+    if [[ "$target" != "Latest" ]] && [[ "$target" != "-" ]] && [[ "$current" == "$target" ]]; then
+         echo -e "${DIM}   ○ $name is up to date ($current). Skipped.${RESET}"
+         return
+    fi
+
+    echo -e "${BOLD}${CYAN}⚡ Updating $name...${RESET}"
+    echo -e "${DIM}   Strategy: $method${RESET}"
+
+    case $method in
+        brew)
+            brew update && brew upgrade && brew cleanup
+            ;;
+        npm_sys)
+            npm update -g
+            ;;
+        npm_pkg)
+            npm install -g "$pkg@latest"
+            ;;
+        droid)
+            curl -fsSL https://app.factory.ai/cli | sh
+            ;;
+        opencode)
+            opencode upgrade || curl -fsSL https://opencode.ai/install | bash
+            ;;
+        brew_pkg) 
+             brew upgrade "$pkg" 2>/dev/null || echo "   Already latest or not managed by brew"
+            ;;
+        *)
+            echo "   No update method found."
+            ;;
+    esac
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}   ✔ Success${RESET}\n"
+    else
+        echo -e "${RED}   ✘ Error updating $name${RESET}\n"
+    fi
+}
+
 # --- Main Logic ---
 
 banner
 
-# 1. Analyze System (Display Table)
+# 1. Analyze System (Display Table & Count Updates)
 analyze_system
 
+# 2. Check for active sessions
+check_active_sessions
 
-# 2. Selection Menu
+# 3. Selection Menu
+TOTAL_UPDATES=$((CODE_UPDATES_COUNT + SYS_UPDATES_COUNT))
 echo -e "${BOLD}Update Modes:${RESET}"
-echo -e "  ${BOLD}[1]${RESET} ${CYAN}Code AI Tools Only${RESET} (Droid, Gemini, OpenCode...) ${DIM}(Recommended)${RESET}"
-echo -e "  ${BOLD}[2]${RESET} ${YELLOW}Full System Update${RESET} (Include Homebrew & NPM Globals)"
+echo -e "  ${BOLD}[1]${RESET} ${CYAN}Code AI Tools Only${RESET} (${BOLD}${CODE_UPDATES_COUNT}${RESET} updates available)"
+echo -e "  ${BOLD}[2]${RESET} ${YELLOW}Full System Update${RESET} (${BOLD}${TOTAL_UPDATES}${RESET} updates available)"
 echo -e "  ${BOLD}[3]${RESET} Exit"
 echo ""
+
 read -p "Select option [1]: " mode
 mode=${mode:-1} # Default to 1
 
-# 3. Execution
+# 4. Execution
 if [[ "$mode" == "3" ]]; then
     echo "Bye!"
     exit 0
@@ -203,16 +276,16 @@ for tool_entry in "${TOOLS[@]}"; do
         continue
     fi
 
-    # Check if installed before updating (Skip missing tools unless we want to force install logic, which we don't for now)
+    # Check if installed before updating
     if command -v "$binary" &> /dev/null; then
-        echo -e "${BOLD}${CYAN}⚡ Updating $display...${RESET}"
-        perform_update "$method" "$display" "$pkg"
+        # Fetch versions again or pass them (re-fetching locally is fast, remote is cached in var logic ideally but we just fetch again for simplicity in execution loop)
+        # To match the logic of 'analyze', we need the target again.
+        # Optimization: Just re-run get_local/remote.
         
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}   ✔ Success${RESET}\n"
-        else
-            echo -e "${RED}   ✘ Error updating $display${RESET}\n"
-        fi
+        current=$(get_local_version "$binary")
+        target=$(get_remote_version "$method" "$pkg")
+        
+        perform_update "$method" "$display" "$pkg" "$current" "$target"
     fi
 done
 
