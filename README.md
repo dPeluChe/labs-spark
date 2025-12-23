@@ -78,6 +78,3 @@ SPARK follows a strict logic to ensure system stability:
 ## 📄 License
 
 MIT - Feel free to use and improve.
-
-
-MIT - Feel free to use and improve.
