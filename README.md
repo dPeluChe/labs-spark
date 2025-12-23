@@ -6,25 +6,28 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 
 ## 🚀 Features
 
+- **v0.1.1 Smart Updates**: Automatically compares local vs remote versions and skips tools that are already up to date.
 - **Intelligence Dashboard**: Grouped view of AI Development Tools vs System Tools.
-- **Version Awareness**: Compares your local version with the latest remote targets (where available).
-- **Update Modes**:
-  - **Option 1 (Code Tools)**: Fast-track update for Droid, Gemini, OpenCode, Codex, etc.
-  - **Option 2 (Full Sync)**: Complete system synchronization including Homebrew and NPM Globals.
-- **Visual Feedback**: Professional TUI-style output with color-coded status icons.
+- **Session Protection**: Scans for active processes/sessions of your tools before updating to prevent data loss or interruptions.
+- **Update Counters**: The interactive menu shows exactly how many updates are available for each category.
+- **Visual Feedback**: Professional TUI-style output with color-coded status icons:
+  - ● (Green): Installed & Up to date.
+  - ↑ (Yellow): Update available.
+  - ○ (Dim): Not installed.
 
 ## 🛠 Supported Tools
 
 ### AI Development Tools
+- **Claude CLI** (@anthropic-ai/claude-code)
 - **Droid CLI** (Factory AI)
 - **Gemini CLI** (Google)
 - **OpenCode** (OpenCode AI)
 - **Codex CLI** (OpenAI)
+- **Crush CLI** (Development)
 
 ### System Tools
 - **Homebrew**
 - **NPM Global Packages**
-- **Crush CLI**
 
 ## 📦 Installation
 
