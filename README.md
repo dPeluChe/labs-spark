@@ -6,33 +6,32 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 
 ## 🚀 Features
 
-- **v0.1.2 App Support**: Now monitors terminal emulators like iTerm2, Ghostty, and Warp Terminal.
-- **v0.1.1 Smart Updates**: Automatically compares local vs remote versions and skips tools that are already up to date.
-- **Intelligence Dashboard**: Grouped view of AI Development Tools, Terminals, and System Tools.
-- **Session Protection**: Scans for active processes/sessions before updating to prevent data loss.
-- **Visual Feedback**: Professional TUI-style output with color-coded status icons:
-  - ● (Green): Installed & Up to date.
-  - ↑ (Yellow): Update available.
-  - ○ (Dim): Not installed.
+- **v0.2.0 Surgical Precision**: Categorized updates into AI Tools, Utilities, and Critical Runtimes.
+- **v0.2.0 Runtime Safety**: Adds a "Danger Zone" confirmation before updating sensitive runtimes like Node.js or Python.
+- **v0.1.2 App Support**: Monitors terminal emulators like iTerm2, Ghostty, and Warp Terminal.
+- **Smart Updates**: Automatically compares local vs remote versions and skips tools that are already up to date.
+- **Intelligence Dashboard**: Grouped view of all system components.
+- **Session Protection**: Scans for active processes/sessions before updating.
 
 ## 🛠 Supported Tools
 
-### AI Development Tools
-- **Claude CLI** (@anthropic-ai/claude-code)
-- **Droid CLI** (Factory AI)
-- **Gemini CLI** (Google)
-- **OpenCode** (OpenCode AI)
-- **Codex CLI** (OpenAI)
-- **Crush CLI** (Development)
+### AI Development Tools (CODE)
+- Claude, Droid, Gemini, OpenCode, Codex, Crush.
 
-### Terminal Emulators
-- **iTerm2**
-- **Ghostty**
-- **Warp Terminal**
+### Terminal Emulators (TERM)
+- iTerm2, Ghostty, Warp Terminal.
 
-### System Tools
-- **Homebrew**
-- **NPM Global Packages**
+### Safe Utilities (UTILS)
+- **Productivity**: Zellij, Tmux, Watchman, Direnv.
+- **Core**: Git, Bash, SQLite, Heroku, Pre-commit.
+
+### Critical Runtimes (RUNTIME) ⚠️
+- **Languages**: Node.js, Python 3.13, Go, Ruby.
+- **Databases**: PostgreSQL 16.
+*Updates for this category require explicit confirmation.*
+
+### System Tools (SYS)
+- Homebrew, NPM Global Packages.
 
 ## 📦 Installation
 

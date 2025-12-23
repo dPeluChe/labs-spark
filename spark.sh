@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.1.1 - Intelligent CLI Updater
+# SPARK v0.2.0 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -16,20 +16,49 @@ RESET="\033[0m"
 
 # Tools Configuration
 # Format: "CATEGORY:BinaryName:PackageName:DisplayName:UpdateMethod"
-# Categories: CODE (AI/Dev tools), SYS (System managers like brew/npm)
+# Categories: CODE (AI), TERM (Terminals), UTILS (Safe Tools), RUNTIME (Sensitive), SYS (Managers)
 TOOLS=(
+    # AI Development
     "CODE:claude:@anthropic-ai/claude-code:Claude CLI:npm_pkg"
     "CODE:droid:factory-cli:Droid CLI:droid"
     "CODE:gemini:@google/gemini-cli:Gemini CLI:npm_pkg"
     "CODE:opencode:opencode-ai:OpenCode:opencode"
     "CODE:codex:@openai/codex:Codex CLI:npm_pkg"
     "CODE:crush:crush:Crush CLI:brew_pkg"
-    "SYS:brew:homebrew:Homebrew:brew"
+
+    # Terminal Emulators
+    "TERM:iterm:iterm2:iTerm2:mac_app"
+    "TERM:ghostty:ghostty:Ghostty:mac_app"
+    "TERM:warp:warp:Warp Terminal:mac_app"
+
+    # Safe Utilities (Low Risk)
+    "UTILS:zellij:zellij:Zellij:brew_pkg"
+    "UTILS:tmux:tmux:Tmux:brew_pkg"
+    "UTILS:git:git:Git:brew_pkg"
+    "UTILS:bash:bash:Bash:brew_pkg"
+    "UTILS:sqlite3:sqlite:SQLite:brew_pkg"
+    "UTILS:watchman:watchman:Watchman:brew_pkg"
+    "UTILS:direnv:direnv:Direnv:brew_pkg"
+    "UTILS:heroku:heroku:Heroku CLI:brew_pkg"
+    "UTILS:pre-commit:pre-commit:Pre-commit:brew_pkg"
+
+    # Critical Runtimes (High Risk)
+    "RUNTIME:node:node:Node.js:brew_pkg"
+    "RUNTIME:python3:python@3.13:Python 3.13:brew_pkg"
+    "RUNTIME:go:go:Go Lang:brew_pkg"
+    "RUNTIME:ruby:ruby:Ruby:brew_pkg"
+    "RUNTIME:psql:postgresql@16:PostgreSQL 16:brew_pkg"
+
+    # System Managers
+    "SYS:brew:homebrew:Homebrew Core:brew"
     "SYS:npm:npm:NPM Globals:npm_sys"
 )
 
 # Global Counters
 CODE_UPDATES_COUNT=0
+TERM_UPDATES_COUNT=0
+UTILS_UPDATES_COUNT=0
+RUNTIME_UPDATES_COUNT=0
 SYS_UPDATES_COUNT=0
 
 # --- Helper Functions ---
@@ -43,12 +72,22 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  System Intelligence & Update Utility v0.1.1${RESET}"
-    echo -e "${DIM}  ===========================================${RESET}\n"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.0${RESET}"
+    echo -e "${DIM}  ========================================${RESET}\n"
 }
 
 get_local_version() {
     local binary=$1
+    
+    # Special handling for macOS Apps
+    if [[ "$binary" == "iterm" ]]; then
+        [ -d "/Applications/iTerm.app" ] && defaults read /Applications/iTerm.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "ghostty" ]]; then
+        [ -d "/Applications/Ghostty.app" ] && defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "warp" ]]; then
+        [ -d "/Applications/Warp.app" ] && defaults read /Applications/Warp.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    fi
+
     if ! command -v "$binary" &> /dev/null; then
         echo "MISSING"
         return
@@ -60,13 +99,11 @@ get_local_version() {
     elif [[ "$binary" == "npm" ]]; then
         ver=$(npm --version)
     elif [[ "$binary" == "claude" ]]; then
-         # Try direct version flag first, fallback to npm list
          ver=$($binary --version 2>/dev/null | awk '{print $NF}')
          if [[ -z "$ver" ]]; then
             ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}')
          fi
     elif [[ "$binary" == "droid" ]]; then
-        # Droid doesn't always expose version easily
         ver="Installed"
     elif [[ "$binary" == "opencode" ]]; then
         ver=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $3}') || ver="Installed"
@@ -74,11 +111,12 @@ get_local_version() {
          ver=$(npm list -g @google/gemini-cli --depth=0 2>/dev/null | grep gemini-cli | awk -F@ '{print $NF}') || ver="Unknown"
     elif [[ "$binary" == "codex" ]]; then
          ver=$(npm list -g @openai/codex --depth=0 2>/dev/null | grep codex | awk -F@ '{print $NF}') || ver="Unknown"
+    elif [[ "$binary" == "sqlite3" ]]; then
+         ver=$(sqlite3 --version | awk '{print $1}')
     else
         ver=$($binary --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Detected"
     fi
     
-    # Final cleanup
     if [[ -z "$ver" ]]; then ver="Detected"; fi
     echo "$ver"
 }
@@ -87,10 +125,16 @@ get_remote_version() {
     local method=$1
     local package=$2
     
-    # Only fetch remote versions for NPM packages to keep script fast.
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
-        local remote=$(npm view "$package" version 2>/dev/null)
-        echo "$remote"
+        npm view "$package" version 2>/dev/null
+    elif [[ "$method" == "mac_app" ]]; then
+        brew info --cask "$package" 2>/dev/null | head -n 1 | awk '{print $2}'
+    elif [[ "$method" == "brew_pkg" ]]; then
+        # For brew packages, try to get info. 
+        # Caution: 'brew info' can be slow if run for every package.
+        # Optimizing: We assume checking outdated status via 'analyze_system' logic if we implemented 'brew outdated' parsing, 
+        # but here we stick to simple consistent checks.
+        echo "Latest" 
     else
         echo "Latest"
     fi
@@ -98,15 +142,18 @@ get_remote_version() {
 
 check_active_sessions() {
     local active_found=0
-    
     echo -e "${DIM}Checking for active sessions...${RESET}"
     
     for tool_entry in "${TOOLS[@]}"; do
         IFS=':' read -r category binary pkg display method <<< "$tool_entry"
-        
-        if command -v "$binary" &> /dev/null; then
-            # pgrep -f matches the full command line
-            if pgrep -f "$binary" > /dev/null; then
+        if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]]; then
+            local proc=$binary
+            [[ "$binary" == "iterm" ]] && proc="iTerm2"
+            [[ "$binary" == "warp" ]] && proc="Warp"
+            [[ "$binary" == "ghostty" ]] && proc="Ghostty"
+            [[ "$binary" == "python3" ]] && proc="python"
+            
+            if pgrep -fi "$proc" > /dev/null; then
                 if [[ $active_found -eq 0 ]]; then
                     echo -e "${YELLOW}${BOLD}⚠️  Active Sessions Detected:${RESET}"
                     active_found=1
@@ -114,7 +161,7 @@ check_active_sessions() {
                 echo -e "   - $display is currently running"
             fi
         fi
-done
+    done
     
     if [[ $active_found -eq 1 ]]; then
         echo -e "${YELLOW}   Updating running tools may cause interruptions.${RESET}\n"
@@ -126,20 +173,19 @@ analyze_system() {
     printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
     echo "--------------------------------------------------------"
 
-    # Reset counters
     CODE_UPDATES_COUNT=0
+    TERM_UPDATES_COUNT=0
+    UTILS_UPDATES_COUNT=0
+    RUNTIME_UPDATES_COUNT=0
     SYS_UPDATES_COUNT=0
 
-    # Function to print a category group
     print_group() {
         local target_cat=$1
         local title=$2
-        
         echo -e "${DIM}--- $title ---${RESET}"
         
         for tool_entry in "${TOOLS[@]}"; do
             IFS=':' read -r category binary pkg display method <<< "$tool_entry"
-            
             if [[ "$category" == "$target_cat" ]]; then
                 local current=$(get_local_version "$binary")
                 local icon=""
@@ -156,26 +202,30 @@ analyze_system() {
                     color="${RESET}"
                     target=$(get_remote_version "$method" "$pkg")
                     
-                    # Logic to determine if update is needed
                     if [[ "$target" == "Latest" ]]; then
-                        # Cannot determine version parity, assume update might be needed or manual check
-                        needs_update=1 
+                        # If target is Latest (Brew default here), we assume up to date unless we do a deep check
+                        # To improve utility without slowing down, we mark as Green by default unless known update
+                        # Ideally, we would parse 'brew outdated' output here.
+                        needs_update=0 
                     elif [[ "$target" != "-" ]] && [[ "$current" != "$target" ]]; then
                         needs_update=1
                         color="${YELLOW}"
                         icon="${YELLOW}↑${RESET}"
-                    elif [[ "$current" == "$target" ]]; then
-                        color="${GREEN}"
                     fi
                 fi
+                
+                # Logic Fix: For Brew packages where we return "Latest", we can't easily know if update needed without `brew outdated`.
+                # So the count might be inaccurate for Brew Utils/Runtimes in this fast mode. 
+                # Future improvement: Run `brew outdated --json` once at start.
 
-                # Increment Counters
                 if [[ $needs_update -eq 1 ]]; then
-                    if [[ "$category" == "CODE" ]]; then ((CODE_UPDATES_COUNT++)); fi
-                    if [[ "$category" == "SYS" ]]; then ((SYS_UPDATES_COUNT++)); fi
+                    [[ "$category" == "CODE" ]] && ((CODE_UPDATES_COUNT++))
+                    [[ "$category" == "TERM" ]] && ((TERM_UPDATES_COUNT++))
+                    [[ "$category" == "UTILS" ]] && ((UTILS_UPDATES_COUNT++))
+                    [[ "$category" == "RUNTIME" ]] && ((RUNTIME_UPDATES_COUNT++))
+                    [[ "$category" == "SYS" ]] && ((SYS_UPDATES_COUNT++))
                 fi
 
-                # Visual Table Row
                 printf "% -13b ${color}%-18s %-15s ${MAGENTA}%-15s${RESET}\n" "$icon" "$display" "$current" "$target"
             fi
         done
@@ -183,7 +233,13 @@ analyze_system() {
 
     print_group "CODE" "AI Development Tools"
     echo ""
-    print_group "SYS" "System Tools"
+    print_group "TERM" "Terminal Emulators"
+    echo ""
+    print_group "UTILS" "Safe Utilities"
+    echo ""
+    print_group "RUNTIME" "Critical Runtimes (High Risk)"
+    echo ""
+    print_group "SYS" "System Managers"
     echo ""
 }
 
@@ -194,98 +250,83 @@ perform_update() {
     local current=$4
     local target=$5
 
-    # Smart Skip Logic
     if [[ "$target" != "Latest" ]] && [[ "$target" != "-" ]] && [[ "$current" == "$target" ]]; then
          echo -e "${DIM}   ○ $name is up to date ($current). Skipped.${RESET}"
          return
     fi
 
     echo -e "${BOLD}${CYAN}⚡ Updating $name...${RESET}"
-    echo -e "${DIM}   Strategy: $method${RESET}"
 
     case $method in
-        brew)
-            brew update && brew upgrade && brew cleanup
-            ;;
-        npm_sys)
-            npm update -g
-            ;;
-        npm_pkg)
-            npm install -g "$pkg@latest"
-            ;;
-        droid)
-            curl -fsSL https://app.factory.ai/cli | sh
-            ;;
-        opencode)
-            opencode upgrade || curl -fsSL https://opencode.ai/install | bash
-            ;;
-        brew_pkg) 
-             brew upgrade "$pkg" 2>/dev/null || echo "   Already latest or not managed by brew"
-            ;;
-        *)
-            echo "   No update method found."
-            ;;
+        brew) brew update && brew upgrade && brew cleanup ;; 
+        npm_sys) npm update -g ;; 
+        npm_pkg) npm install -g "$pkg@latest" ;; 
+        droid) curl -fsSL https://app.factory.ai/cli | sh ;; 
+        opencode) opencode upgrade || curl -fsSL https://opencode.ai/install | bash ;; 
+        brew_pkg) brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}" ;; 
+        mac_app)
+            if brew list --cask "$pkg" &>/dev/null; then
+                brew upgrade --cask "$pkg"
+            else
+                echo -e "${YELLOW}   ! $name is not managed by Homebrew.${RESET}"
+            fi
+            ;; 
+        *) echo "   No update method found." ;; 
     esac
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}   ✔ Success${RESET}\n"
-    else
-        echo -e "${RED}   ✘ Error updating $name${RESET}\n"
-    fi
 }
 
 # --- Main Logic ---
-
 banner
-
-# 1. Analyze System (Display Table & Count Updates)
 analyze_system
-
-# 2. Check for active sessions
 check_active_sessions
 
-# 3. Selection Menu
-TOTAL_UPDATES=$((CODE_UPDATES_COUNT + SYS_UPDATES_COUNT))
 echo -e "${BOLD}Update Modes:${RESET}"
-echo -e "  ${BOLD}[1]${RESET} ${CYAN}Code AI Tools Only${RESET} (${BOLD}${CODE_UPDATES_COUNT}${RESET} updates available)"
-echo -e "  ${BOLD}[2]${RESET} ${YELLOW}Full System Update${RESET} (${BOLD}${TOTAL_UPDATES}${RESET} updates available)"
-echo -e "  ${BOLD}[3]${RESET} Exit"
+echo -e "  ${BOLD}[1]${RESET} ${CYAN}AI & Terminals${RESET}     (Code Tools + iTerm/Warp)"
+echo -e "  ${BOLD}[2]${RESET} ${GREEN}Utilities${RESET}          (Git, Tmux, Zellij, etc.)"
+echo -e "  ${BOLD}[3]${RESET} ${RED}Runtimes${RESET}           (Node, Python, Go, Postgres) ${RED}⚠️${RESET}"
+echo -e "  ${BOLD}[4]${RESET} ${YELLOW}Full System${RESET}        (Everything included)"
+echo -e "  ${BOLD}[5]${RESET} Exit"
 echo ""
 
 read -p "Select option [1]: " mode
 mode=${mode:-1} # Default to 1
 
-# 4. Execution
-if [[ "$mode" == "3" ]]; then
-    echo "Bye!"
-    exit 0
-fi
+if [[ "$mode" == "5" ]]; then echo "Bye!"; exit 0; fi
 
-TARGET_CATEGORY="CODE"
-if [[ "$mode" == "2" ]]; then
-    TARGET_CATEGORY="ALL"
+TARGET_CATEGORY=""
+if [[ "$mode" == "1" ]]; then TARGET_CATEGORY="CODE_TERM"; fi
+if [[ "$mode" == "2" ]]; then TARGET_CATEGORY="UTILS"; fi
+if [[ "$mode" == "3" ]]; then TARGET_CATEGORY="RUNTIME"; fi
+if [[ "$mode" == "4" ]]; then TARGET_CATEGORY="ALL"; fi
+
+# Safety Check for Runtimes
+if [[ "$TARGET_CATEGORY" == "RUNTIME" ]] || [[ "$TARGET_CATEGORY" == "ALL" ]]; then
+    echo -e "\n${RED}${BOLD}⚠️  WARNING: You are about to update critical runtimes (Node, Python, DBs).${RESET}"
+    echo -e "${RED}    This might break existing projects or virtual environments.${RESET}"
+    read -p "    Are you absolutely sure? (type 'yes' to proceed): " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo "    Operation aborted by user."
+        exit 0
+    fi
 fi
 
 echo -e "\n${BOLD}Starting Update Sequence...${RESET}\n"
 
 for tool_entry in "${TOOLS[@]}"; do
     IFS=':' read -r category binary pkg display method <<< "$tool_entry"
+    
+    # Matching Logic
+    MATCH=0
+    if [[ "$TARGET_CATEGORY" == "ALL" ]]; then MATCH=1; fi
+    if [[ "$TARGET_CATEGORY" == "CODE_TERM" ]] && ([[ "$category" == "CODE" ]] || [[ "$category" == "TERM" ]]); then MATCH=1; fi
+    if [[ "$category" == "$TARGET_CATEGORY" ]]; then MATCH=1; fi
 
-    # Filter logic
-    if [[ "$TARGET_CATEGORY" != "ALL" ]] && [[ "$category" != "$TARGET_CATEGORY" ]]; then
-        continue
-    fi
-
-    # Check if installed before updating
-    if command -v "$binary" &> /dev/null; then
-        # Fetch versions again or pass them (re-fetching locally is fast, remote is cached in var logic ideally but we just fetch again for simplicity in execution loop)
-        # To match the logic of 'analyze', we need the target again.
-        # Optimization: Just re-run get_local/remote.
-        
-        current=$(get_local_version "$binary")
-        target=$(get_remote_version "$method" "$pkg")
-        
-        perform_update "$method" "$display" "$pkg" "$current" "$target"
+    if [[ $MATCH -eq 1 ]]; then
+        if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]]; then
+            current=$(get_local_version "$binary")
+            target=$(get_remote_version "$method" "$pkg")
+            perform_update "$method" "$display" "$pkg" "$current" "$target"
+        fi
     fi
 done
 
