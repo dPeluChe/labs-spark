@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.2.2 - Surgical Precision CLI Updater
+# SPARK v0.2.3 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -73,7 +73,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.2${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.3${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -252,12 +252,12 @@ perform_update() {
 
     local success=0
     case $method in
-        brew) brew update && brew upgrade && brew cleanup && success=1 ";;"
-        npm_sys) npm update -g && success=1 ";;"
-        npm_pkg) npm install -g "$pkg@latest" && success=1 ";;"
-        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ";;"
-        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ";;"
-        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ";;"
+        brew) brew update && brew upgrade && brew cleanup && success=1 ;;
+        npm_sys) npm update -g && success=1 ;;
+        npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
+        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
+        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
+        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;;
         mac_app)
             if brew list --cask "$pkg" &>/dev/null;
  then
