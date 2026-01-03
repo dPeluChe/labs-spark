@@ -6,6 +6,7 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 
 ## 🚀 Features
 
+- **v0.3.0 Expanded Coverage**: New IDE category (VSCode, Cursor, Zed), Oh My Zsh support, Toad CLI integration, and cleaner Homebrew output.
 - **v0.2.5 Visual Clarity**: Replaces redundant version numbers with a clean "✔ Up to date" message when no actions are needed.
 - **v0.2.4 Real-Time Intelligence**: Pre-fetches accurate upgrade data from Homebrew to distinguish between "Latest" and actual available versions.
 - **v0.2.1 Summary Report**: Displays a clean summary of all updated tools and version changes at the end of the process.
@@ -19,14 +20,17 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 ## 🛠 Supported Tools
 
 ### AI Development Tools (CODE)
-- Claude, Droid, Gemini, OpenCode, Codex, Crush.
+- Claude CLI, Droid, Gemini, OpenCode, Codex, Crush, Toad.
 
 ### Terminal Emulators (TERM)
 - iTerm2, Ghostty, Warp Terminal.
 
+### IDEs and Code Editors (IDE)
+- Visual Studio Code, Cursor, Zed Editor.
+
 ### Safe Utilities (UTILS)
-- **Productivity**: Zellij, Tmux, Watchman, Direnv.
-- **Core**: Git, Bash, SQLite, Heroku, Pre-commit.
+- **Shell**: Oh My Zsh, Zellij, Tmux.
+- **Core**: Git, Bash, SQLite, Heroku, Pre-commit, Watchman, Direnv.
 
 ### Critical Runtimes (RUNTIME) ⚠️
 - **Languages**: Node.js, Python 3.13, Go, Ruby.

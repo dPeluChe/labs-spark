@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.2.5 - Surgical Precision CLI Updater
+# SPARK v0.3.0 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -24,13 +24,20 @@ TOOLS=(
     "CODE:opencode:opencode-ai:OpenCode:opencode"
     "CODE:codex:@openai/codex:Codex CLI:npm_pkg"
     "CODE:crush:crush:Crush CLI:brew_pkg"
+    "CODE:toad:batrachian-toad:Toad CLI:toad"
 
     # Terminal Emulators
     "TERM:iterm:iterm2:iTerm2:mac_app"
     "TERM:ghostty:ghostty:Ghostty:mac_app"
     "TERM:warp:warp:Warp Terminal:mac_app"
 
+    # IDEs and Code Editors
+    "IDE:code:visual-studio-code:VS Code:mac_app"
+    "IDE:cursor:cursor:Cursor IDE:mac_app"
+    "IDE:zed:zed:Zed Editor:mac_app"
+
     # Safe Utilities (Low Risk)
+    "UTILS:omz:oh-my-zsh:Oh My Zsh:omz"
     "UTILS:zellij:zellij:Zellij:brew_pkg"
     "UTILS:tmux:tmux:Tmux:brew_pkg"
     "UTILS:git:git:Git:brew_pkg"
@@ -56,6 +63,7 @@ TOOLS=(
 # Global Storage
 CODE_UPDATES_COUNT=0
 TERM_UPDATES_COUNT=0
+IDE_UPDATES_COUNT=0
 UTILS_UPDATES_COUNT=0
 RUNTIME_UPDATES_COUNT=0
 SYS_UPDATES_COUNT=0
@@ -73,7 +81,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.2.5${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.3.0${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -87,6 +95,12 @@ get_local_version() {
         [ -d "/Applications/Ghostty.app" ] && defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
     elif [[ "$binary" == "warp" ]]; then
         [ -d "/Applications/Warp.app" ] && defaults read /Applications/Warp.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "code" ]]; then
+        [ -d "/Applications/Visual Studio Code.app" ] && defaults read "/Applications/Visual Studio Code.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "cursor" ]]; then
+        [ -d "/Applications/Cursor.app" ] && defaults read /Applications/Cursor.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "zed" ]]; then
+        [ -d "/Applications/Zed.app" ] && defaults read /Applications/Zed.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
     fi
 
     if ! command -v "$binary" &> /dev/null;
@@ -107,12 +121,22 @@ get_local_version() {
          fi
     elif [[ "$binary" == "droid" ]]; then
         ver="Installed"
+    elif [[ "$binary" == "toad" ]]; then
+        ver=$(toad --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Installed"
     elif [[ "$binary" == "opencode" ]]; then
         ver=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $3}') || ver="Installed"
+    elif [[ "$binary" == "omz" ]]; then
+        if [ -d "$HOME/.oh-my-zsh" ]; then
+            ver=$(cd ~/.oh-my-zsh 2>/dev/null && git rev-parse --short HEAD 2>/dev/null) || ver="Installed"
+        else
+            ver="MISSING"
+        fi
     elif [[ "$binary" == "gemini" ]]; then
          ver=$(npm list -g @google/gemini-cli --depth=0 2>/dev/null | grep gemini-cli | awk -F@ '{print $NF}') || ver="Unknown"
     elif [[ "$binary" == "codex" ]]; then
          ver=$(npm list -g @openai/codex --depth=0 2>/dev/null | grep codex | awk -F@ '{print $NF}') || ver="Unknown"
+    elif [[ "$binary" == "crush" ]]; then
+         ver=$(crush --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Installed"
     elif [[ "$binary" == "sqlite3" ]]; then
          ver=$(sqlite3 --version | awk '{print $1}')
     else
@@ -153,7 +177,11 @@ check_active_sessions() {
             [[ "$binary" == "iterm" ]] && proc="iTerm2"
             [[ "$binary" == "warp" ]] && proc="Warp"
             [[ "$binary" == "ghostty" ]] && proc="Ghostty"
+            [[ "$binary" == "code" ]] && proc="Visual Studio Code"
+            [[ "$binary" == "cursor" ]] && proc="Cursor"
+            [[ "$binary" == "zed" ]] && proc="Zed"
             [[ "$binary" == "python3" ]] && proc="python"
+            [[ "$binary" == "omz" ]] && proc="zsh"
             
             if pgrep -fi "$proc" > /dev/null;
  then
@@ -174,13 +202,14 @@ check_active_sessions() {
 analyze_system() {
     echo -e "${BOLD}Analyzing System Components...${RESET}"
     echo -e "${DIM}   Fetching Homebrew intelligence...${RESET}"
-    BREW_CACHE=$(brew outdated --verbose)
+    BREW_CACHE=$(HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 brew outdated --verbose 2>&1 | grep -v "^==>" | grep -v "Adjust how often" | grep -v "Auto-updated" | grep -v "Updated.*taps" | grep -v "New Formulae" | grep -v "New Casks" | grep -v "You have.*outdated")
     
     printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
     echo "--------------------------------------------------------"
 
     CODE_UPDATES_COUNT=0
     TERM_UPDATES_COUNT=0
+    IDE_UPDATES_COUNT=0
     UTILS_UPDATES_COUNT=0
     RUNTIME_UPDATES_COUNT=0
     SYS_UPDATES_COUNT=0
@@ -226,6 +255,7 @@ analyze_system() {
                 if [[ $needs_update -eq 1 ]]; then
                     [[ "$category" == "CODE" ]] && ((CODE_UPDATES_COUNT++))
                     [[ "$category" == "TERM" ]] && ((TERM_UPDATES_COUNT++))
+                    [[ "$category" == "IDE" ]] && ((IDE_UPDATES_COUNT++))
                     [[ "$category" == "UTILS" ]] && ((UTILS_UPDATES_COUNT++))
                     [[ "$category" == "RUNTIME" ]] && ((RUNTIME_UPDATES_COUNT++))
                     [[ "$category" == "SYS" ]] && ((SYS_UPDATES_COUNT++))
@@ -239,6 +269,8 @@ analyze_system() {
     print_group "CODE" "AI Development Tools"
     echo ""
     print_group "TERM" "Terminal Emulators"
+    echo ""
+    print_group "IDE" "IDEs and Code Editors"
     echo ""
     print_group "UTILS" "Safe Utilities"
     echo ""
@@ -268,17 +300,19 @@ perform_update() {
         npm_sys) npm update -g && success=1 ;;
         npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
         droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
+        toad) curl -fsSL https://batrachian.ai/install | sh && success=1 ;;
         opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
+        omz) (cd ~/.oh-my-zsh && git pull) && success=1 ;;
         brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;;
-        mac_app) 
+        mac_app)
             if brew list --cask "$pkg" &>/dev/null;
  then
                 brew upgrade --cask "$pkg" && success=1
             else
                 echo -e "${YELLOW}   ! $name is not managed by Homebrew.${RESET}"
             fi
-            ;; 
-        *) echo "   No update method found." ;; 
+            ;;
+        *) echo "   No update method found." ;;
     esac
 
     if [ $success -eq 1 ]; then
@@ -307,23 +341,25 @@ analyze_system
 check_active_sessions
 
 echo -e "${BOLD}Update Modes:${RESET}"
-echo -e "  ${BOLD}[1]${RESET} ${CYAN}AI & Terminals${RESET}     (Code Tools + iTerm/Warp)"
-echo -e "  ${BOLD}[2]${RESET} ${GREEN}Utilities${RESET}          (Git, Tmux, Zellij, etc.)"
-echo -e "  ${BOLD}[3]${RESET} ${RED}Runtimes${RESET}           (Node, Python, Go, Postgres) ${RED}⚠️${RESET}"
-echo -e "  ${BOLD}[4]${RESET} ${YELLOW}Full System${RESET}        (Everything included)"
-echo -e "  ${BOLD}[5]${RESET} Exit"
+echo -e "  ${BOLD}[1]${RESET} ${CYAN}AI Tools${RESET}           (Claude, Droid, Gemini, Toad, etc.)"
+echo -e "  ${BOLD}[2]${RESET} ${MAGENTA}Terminals & IDEs${RESET}   (iTerm, Ghostty, VSCode, Cursor, Zed)"
+echo -e "  ${BOLD}[3]${RESET} ${GREEN}Utilities${RESET}          (Git, Tmux, Zellij, Oh My Zsh, etc.)"
+echo -e "  ${BOLD}[4]${RESET} ${RED}Runtimes${RESET}           (Node, Python, Go, Postgres) ${RED}⚠️${RESET}"
+echo -e "  ${BOLD}[5]${RESET} ${YELLOW}Full System${RESET}        (Everything included)"
+echo -e "  ${BOLD}[6]${RESET} Exit"
 echo ""
 
 read -p "Select option [1]: " mode
 mode=${mode:-1}
 
-if [[ "$mode" == "5" ]]; then echo "Bye!"; exit 0; fi
+if [[ "$mode" == "6" ]]; then echo "Bye!"; exit 0; fi
 
 TARGET_CATEGORY=""
-if [[ "$mode" == "1" ]]; then TARGET_CATEGORY="CODE_TERM"; fi
-if [[ "$mode" == "2" ]]; then TARGET_CATEGORY="UTILS"; fi
-if [[ "$mode" == "3" ]]; then TARGET_CATEGORY="RUNTIME"; fi
-if [[ "$mode" == "4" ]]; then TARGET_CATEGORY="ALL"; fi
+if [[ "$mode" == "1" ]]; then TARGET_CATEGORY="CODE"; fi
+if [[ "$mode" == "2" ]]; then TARGET_CATEGORY="TERM_IDE"; fi
+if [[ "$mode" == "3" ]]; then TARGET_CATEGORY="UTILS"; fi
+if [[ "$mode" == "4" ]]; then TARGET_CATEGORY="RUNTIME"; fi
+if [[ "$mode" == "5" ]]; then TARGET_CATEGORY="ALL"; fi
 
 # Safety Check for Runtimes
 if [[ "$TARGET_CATEGORY" == "RUNTIME" ]] || [[ "$TARGET_CATEGORY" == "ALL" ]]; then
@@ -340,10 +376,10 @@ echo -e "\n${BOLD}Starting Update Sequence...${RESET}\n"
 
 for tool_entry in "${TOOLS[@]}"; do
     IFS=':' read -r category binary pkg display method <<< "$tool_entry"
-    
+
     MATCH=0
     if [[ "$TARGET_CATEGORY" == "ALL" ]]; then MATCH=1; fi
-    if [[ "$TARGET_CATEGORY" == "CODE_TERM" ]] && ([[ "$category" == "CODE" ]] || [[ "$category" == "TERM" ]]); then MATCH=1; fi
+    if [[ "$TARGET_CATEGORY" == "TERM_IDE" ]] && ([[ "$category" == "TERM" ]] || [[ "$category" == "IDE" ]]); then MATCH=1; fi
     if [[ "$category" == "$TARGET_CATEGORY" ]]; then MATCH=1; fi
 
     if [[ $MATCH -eq 1 ]]; then
