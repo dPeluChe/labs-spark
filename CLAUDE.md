@@ -116,10 +116,33 @@ SPARK follows a **surgical precision** approach:
 - **npm_pkg**: Installs specific npm package to latest (`npm install -g package@latest`)
 - **brew_pkg**: Updates specific Homebrew formula (`brew upgrade package`)
 - **mac_app**: Updates Homebrew cask (`brew upgrade --cask package`)
-- **droid**: Curl-based installer (`curl -fsSL https://app.factory.ai/cli | sh`)
-- **toad**: Curl-based installer (`curl -fsSL https://batrachian.ai/install | sh`)
+- **claude**: Dual-support updater - detects curl installation (~/.claude/local/claude) or npm installation, uses appropriate method
+- **droid**: Curl-based installer (`curl -fsSL https://app.factory.ai/cli | sh`), remote version from npm (factory-cli)
+- **toad**: Curl-based installer (`curl -fsSL https://batrachian.ai/install | sh`), remote version from PyPI API
 - **opencode**: Custom upgrade command with fallback (`opencode upgrade || curl install`)
 - **omz**: Git pull in Oh My Zsh directory (`cd ~/.oh-my-zsh && git pull`)
+
+### AI Tools Version Detection
+
+**Claude CLI** (v0.3.1+):
+- **Local**: Tries `claude --version` first (curl installation), fallback to npm list
+- **Remote**: Queries `npm view @anthropic-ai/claude-code version`
+- **Update**: Auto-detects installation method (checks ~/.claude/local/claude for curl vs npm)
+
+**Droid CLI**:
+- **Local**: `droid --version` → extracts full version string
+- **Remote**: Queries `npm view factory-cli version` (Droid's npm package name)
+- **Update**: Curl script from factory.ai
+
+**Toad CLI**:
+- **Local**: `uv tool list | grep batrachian-toad` (Toad doesn't support --version flag)
+- **Remote**: PyPI JSON API (`https://pypi.org/pypi/batrachian-toad/json`)
+- **Update**: Curl script from batrachian.ai
+
+**OpenCode**:
+- **Local**: `opencode --version` → extracts last field
+- **Remote**: Currently returns local version (OpenCode manages its own updates)
+- **Update**: `opencode upgrade` command with curl fallback
 
 ## Modifying the Tool
 
@@ -152,6 +175,7 @@ Edit the `TOOLS` array (lines 19-54):
 
 ## Version History
 
+- **v0.3.1**: AI Tools Intelligence - Accurate version detection for Claude (curl/npm dual support), Droid, OpenCode, Toad with remote version checking via PyPI/npm APIs
 - **v0.3.0**: Expanded coverage - New IDE category (VSCode, Cursor, Zed), Oh My Zsh support, Toad CLI, cleaner Homebrew output, reorganized update modes
 - **v0.2.5**: Visual clarity - "✔ Up to date" message instead of duplicate version numbers
 - **v0.2.4**: Real-time Homebrew intelligence via pre-fetching

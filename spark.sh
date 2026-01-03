@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.3.0 - Surgical Precision CLI Updater
+# SPARK v0.3.1 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -18,7 +18,7 @@ RESET="\033[0m"
 # Format: "CATEGORY:BinaryName:PackageName:DisplayName:UpdateMethod"
 TOOLS=(
     # AI Development
-    "CODE:claude:@anthropic-ai/claude-code:Claude CLI:npm_pkg"
+    "CODE:claude:@anthropic-ai/claude-code:Claude CLI:claude"
     "CODE:droid:factory-cli:Droid CLI:droid"
     "CODE:gemini:@google/gemini-cli:Gemini CLI:npm_pkg"
     "CODE:opencode:opencode-ai:OpenCode:opencode"
@@ -81,7 +81,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.3.0${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.3.1${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -115,16 +115,19 @@ get_local_version() {
     elif [[ "$binary" == "npm" ]]; then
         ver=$(npm --version)
     elif [[ "$binary" == "claude" ]]; then
-         ver=$($binary --version 2>/dev/null | awk '{print $NF}')
-         if [[ -z "$ver" ]]; then
+         # Try direct version command first (curl installation)
+         ver=$($binary --version 2>/dev/null | awk '{print $1}')
+         # Fallback to npm if not found
+         if [[ -z "$ver" ]] || [[ "$ver" == "MISSING" ]]; then
             ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}')
          fi
     elif [[ "$binary" == "droid" ]]; then
-        ver="Installed"
+        ver=$(droid --version 2>/dev/null | head -n 1) || ver="Installed"
     elif [[ "$binary" == "toad" ]]; then
-        ver=$(toad --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Installed"
+        # Toad doesn't support --version, use uv tool list
+        ver=$(uv tool list 2>/dev/null | grep "batrachian-toad" | awk '{print $2}' | sed 's/^v//') || ver="Installed"
     elif [[ "$binary" == "opencode" ]]; then
-        ver=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $3}') || ver="Installed"
+        ver=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Installed"
     elif [[ "$binary" == "omz" ]]; then
         if [ -d "$HOME/.oh-my-zsh" ]; then
             ver=$(cd ~/.oh-my-zsh 2>/dev/null && git rev-parse --short HEAD 2>/dev/null) || ver="Installed"
@@ -151,7 +154,7 @@ get_remote_version() {
     local method=$1
     local package=$2
     local local_ver=$3
-    
+
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
         npm view "$package" version 2>/dev/null
     elif [[ "$method" == "brew_pkg" ]] || [[ "$method" == "mac_app" ]]; then
@@ -161,6 +164,18 @@ get_remote_version() {
         else
             echo "$local_ver"
         fi
+    elif [[ "$method" == "claude" ]]; then
+        # Query npm for Claude CLI
+        npm view @anthropic-ai/claude-code version 2>/dev/null || echo "$local_ver"
+    elif [[ "$method" == "toad" ]]; then
+        # Query PyPI for latest version
+        curl -s "https://pypi.org/pypi/batrachian-toad/json" 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4
+    elif [[ "$method" == "droid" ]]; then
+        # Query npm for factory-cli (Droid's package name)
+        npm view factory-cli version 2>/dev/null || echo "$local_ver"
+    elif [[ "$method" == "opencode" ]]; then
+        # OpenCode updates via its own command
+        echo "$local_ver"
     else
         echo "Latest"
     fi
@@ -299,6 +314,16 @@ perform_update() {
         brew) brew update && brew upgrade && brew cleanup && success=1 ;;
         npm_sys) npm update -g && success=1 ;;
         npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
+        claude)
+            # Support both curl and npm installations
+            if [ -f "$HOME/.claude/local/claude" ]; then
+                # Curl installation - reinstall via curl
+                curl -fsSL https://claude.ai/install.sh | bash && success=1
+            else
+                # NPM installation
+                npm install -g "$pkg@latest" && success=1
+            fi
+            ;;
         droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
         toad) curl -fsSL https://batrachian.ai/install | sh && success=1 ;;
         opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
