@@ -1,426 +1,27 @@
 #!/bin/bash
 
-# SPARK v0.4.0 - Surgical Precision CLI Updater
+# SPARK v0.4.2 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
-# --- Configuration & Styling ---
-BOLD="\033[1m"
-DIM="\033[2m"
-RED="\033[31m"
-GREEN="\033[32m"
-YELLOW="\033[33m"
-BLUE="\033[34m"
-MAGENTA="\033[35m"
-CYAN="\033[36m"
-RESET="\033[0m"
+# Resolve directory of this script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Tools Configuration
-# Format: "CATEGORY:BinaryName:PackageName:DisplayName:UpdateMethod"
-TOOLS=(
-    # AI Development
-    "CODE:claude:@anthropic-ai/claude-code:Claude CLI:claude"
-    "CODE:droid:factory-cli:Droid CLI:droid"
-    "CODE:gemini:@google/gemini-cli:Gemini CLI:npm_pkg"
-    "CODE:opencode:opencode-ai:OpenCode:opencode"
-    "CODE:codex:@openai/codex:Codex CLI:npm_pkg"
-    "CODE:crush:crush:Crush CLI:brew_pkg"
-    "CODE:toad:batrachian-toad:Toad CLI:toad"
+# Load Configuration & Modules
+if [ -f "$DIR/config/tools.conf" ]; then
+    source "$DIR/config/tools.conf"
+else
+    echo "Error: config/tools.conf not found."
+    exit 1
+fi
 
-    # Terminal Emulators
-    "TERM:iterm:iterm2:iTerm2:mac_app"
-    "TERM:ghostty:ghostty:Ghostty:mac_app"
-    "TERM:warp:warp:Warp Terminal:mac_app"
-
-    # IDEs and Code Editors
-    "IDE:code:visual-studio-code:VS Code:mac_app"
-    "IDE:cursor:cursor:Cursor IDE:mac_app"
-    "IDE:zed:zed:Zed Editor:mac_app"
-    "IDE:windsurf:windsurf:Windsurf:mac_app"
-    "IDE:antigravity:antigravity:Antigravity:antigravity"
-
-    # Safe Utilities (Low Risk)
-    "UTILS:omz:oh-my-zsh:Oh My Zsh:omz"
-    "UTILS:zellij:zellij:Zellij:brew_pkg"
-    "UTILS:tmux:tmux:Tmux:brew_pkg"
-    "UTILS:git:git:Git:brew_pkg"
-    "UTILS:bash:bash:Bash:brew_pkg"
-    "UTILS:sqlite3:sqlite:SQLite:brew_pkg"
-    "UTILS:watchman:watchman:Watchman:brew_pkg"
-    "UTILS:direnv:direnv:Direnv:brew_pkg"
-    "UTILS:heroku:heroku:Heroku CLI:brew_pkg"
-    "UTILS:pre-commit:pre-commit:Pre-commit:brew_pkg"
-
-    # Critical Runtimes (High Risk)
-    "RUNTIME:node:node:Node.js:brew_pkg"
-    "RUNTIME:python3:python@3.13:Python 3.13:brew_pkg"
-    "RUNTIME:go:go:Go Lang:brew_pkg"
-    "RUNTIME:ruby:ruby:Ruby:brew_pkg"
-    "RUNTIME:psql:postgresql@16:PostgreSQL 16:brew_pkg"
-
-    # System Managers
-    "SYS:brew:homebrew:Homebrew Core:brew"
-    "SYS:npm:npm:NPM Globals:npm_sys"
-)
-
-# Global Storage
-CODE_UPDATES_COUNT=0
-TERM_UPDATES_COUNT=0
-IDE_UPDATES_COUNT=0
-UTILS_UPDATES_COUNT=0
-RUNTIME_UPDATES_COUNT=0
-SYS_UPDATES_COUNT=0
-UPDATED_TOOLS=()
-BREW_CACHE=""
-BREW_CASK_LIST=""
-
-# --- Helper Functions ---
-
-banner() {
-    clear
-    echo -e "${CYAN}${BOLD}"
-    echo "   _____ ____  ___  ____  __ __"
-    echo "  / ___// __ \/   |/ __ \/ //_/"
-    echo "  \__ \/ /_/ / /| / /_/ / ,<   "
-    echo " ___/ / ____/ ___ / _, _/ /| |  "
-    echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
-    echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.4.0${RESET}"
-    echo -e "${DIM}  ========================================${RESET}\n"
-}
-
-get_local_version() {
-    local binary=$1
-    
-    # Special handling for macOS Apps
-    if [[ "$binary" == "iterm" ]]; then
-        [ -d "/Applications/iTerm.app" ] && defaults read /Applications/iTerm.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "ghostty" ]]; then
-        [ -d "/Applications/Ghostty.app" ] && defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "warp" ]]; then
-        [ -d "/Applications/Warp.app" ] && defaults read /Applications/Warp.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "code" ]]; then
-        [ -d "/Applications/Visual Studio Code.app" ] && defaults read "/Applications/Visual Studio Code.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "cursor" ]]; then
-        [ -d "/Applications/Cursor.app" ] && defaults read /Applications/Cursor.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "zed" ]]; then
-        [ -d "/Applications/Zed.app" ] && defaults read /Applications/Zed.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "windsurf" ]]; then
-        [ -d "/Applications/Windsurf.app" ] && defaults read /Applications/Windsurf.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
-    elif [[ "$binary" == "antigravity" ]]; then
-        if [ -f "$HOME/.antigravity/antigravity/bin/antigravity" ]; then
-             "$HOME/.antigravity/antigravity/bin/antigravity" --version 2>/dev/null | head -n 1 | awk '{print $2}' && return
-        fi
-        if command -v antigravity &>/dev/null;
- then
-            antigravity --version 2>/dev/null | head -n 1 | awk '{print $2}' && return
-        fi
-        echo "MISSING" && return
-    fi
-
-    if ! command -v "$binary" &> /dev/null;
- then
-        echo "MISSING"
-        return
-    fi
-
-    local ver=""
-    if [[ "$binary" == "brew" ]]; then
-        ver=$(brew --version | head -n 1 | awk '{print $2}')
-    elif [[ "$binary" == "npm" ]]; then
-        ver=$(npm --version)
-    elif [[ "$binary" == "claude" ]]; then
-         # Try direct version command first (curl installation or brew)
-         ver=$($binary --version 2>/dev/null | awk '{print $1}')
-         # Fallback to npm if not found and not a simple binary
-         if [[ -z "$ver" ]] || [[ "$ver" == "MISSING" ]]; then
-            ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}')
-         fi
-    elif [[ "$binary" == "droid" ]]; then
-        ver=$(droid --version 2>/dev/null | head -n 1) || ver="Installed"
-    elif [[ "$binary" == "toad" ]]; then
-        # Toad doesn't support --version, use uv tool list
-        ver=$(uv tool list 2>/dev/null | grep "batrachian-toad" | awk '{print $2}' | sed 's/^v//') || ver="Installed"
-    elif [[ "$binary" == "opencode" ]]; then
-        ver=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Installed"
-    elif [[ "$binary" == "omz" ]]; then
-        if [ -d "$HOME/.oh-my-zsh" ]; then
-            ver=$(cd ~/.oh-my-zsh 2>/dev/null && git rev-parse --short HEAD 2>/dev/null) || ver="Installed"
-        else
-            ver="MISSING"
-        fi
-    elif [[ "$binary" == "gemini" ]]; then
-         ver=$(npm list -g @google/gemini-cli --depth=0 2>/dev/null | grep gemini-cli | awk -F@ '{print $NF}') || ver="Unknown"
-    elif [[ "$binary" == "codex" ]]; then
-         ver=$(npm list -g @openai/codex --depth=0 2>/dev/null | grep codex | awk -F@ '{print $NF}') || ver="Unknown"
-    elif [[ "$binary" == "crush" ]]; then
-         ver=$(crush --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Installed"
-    elif [[ "$binary" == "sqlite3" ]]; then
-         ver=$(sqlite3 --version | awk '{print $1}')
+for module in common detect update ui; do
+    if [ -f "$DIR/lib/$module.sh" ]; then
+        source "$DIR/lib/$module.sh"
     else
-        ver=$($binary --version 2>/dev/null | head -n 1 | awk '{print $NF}') || ver="Detected"
+        echo "Error: lib/$module.sh not found."
+        exit 1
     fi
-    
-    if [[ -z "$ver" ]]; then ver="Detected"; fi
-    echo "$ver"
-}
-
-get_remote_version() {
-    local method=$1
-    local package=$2
-    local local_ver=$3
-
-    if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
-        npm view "$package" version 2>/dev/null
-    elif [[ "$method" == "brew_pkg" ]] || [[ "$method" == "mac_app" ]]; then
-        # For Mac Apps, first check if it is installed via Brew Cask
-        if [[ "$method" == "mac_app" ]]; then
-            if ! echo "$BREW_CASK_LIST" | grep -q "^$package$"; then
-                echo "Unmanaged"
-                return
-            fi
-        fi
-
-        local update_info=$(echo "$BREW_CACHE" | grep "^$package ")
-        if [[ -n "$update_info" ]]; then
-            # Format is usually: name (current) < (latest)
-            echo "$update_info" | awk '{print $NF}'
-        else
-            # If not in outdated, it's either up to date or unmanaged
-            echo "$local_ver"
-        fi
-    elif [[ "$method" == "claude" ]]; then
-        # Query npm for Claude CLI if we can't get it from brew cache
-        if echo "$BREW_CASK_LIST" | grep -q "claude-code"; then
-             local update_info=$(echo "$BREW_CACHE" | grep "^claude-code ")
-             if [[ -n "$update_info" ]]; then
-                echo "$update_info" | awk '{print $NF}'
-             else
-                echo "$local_ver"
-             fi
-        else
-            npm view @anthropic-ai/claude-code version 2>/dev/null || echo "$local_ver"
-        fi
-    elif [[ "$method" == "toad" ]]; then
-        curl -s "https://pypi.org/pypi/batrachian-toad/json" 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4
-    elif [[ "$method" == "droid" ]]; then
-        npm view factory-cli version 2>/dev/null || echo "$local_ver"
-    elif [[ "$method" == "opencode" ]]; then
-        echo "$local_ver"
-    elif [[ "$method" == "antigravity" ]]; then
-        echo "Manual"
-    else
-        echo "Latest"
-    fi
-}
-
-check_active_sessions() {
-    local active_found=0
-    echo -e "${DIM}Checking for active sessions...${RESET}"
-    
-    for tool_entry in "${TOOLS[@]}"; do
-        IFS=':' read -r category binary pkg display method <<< "$tool_entry"
-        if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]]; then
-            local proc=$binary
-            [[ "$binary" == "iterm" ]] && proc="iTerm2"
-            [[ "$binary" == "warp" ]] && proc="Warp"
-            [[ "$binary" == "ghostty" ]] && proc="Ghostty"
-            [[ "$binary" == "code" ]] && proc="Visual Studio Code"
-            [[ "$binary" == "cursor" ]] && proc="Cursor"
-            [[ "$binary" == "zed" ]] && proc="Zed"
-            [[ "$binary" == "windsurf" ]] && proc="Windsurf"
-            [[ "$binary" == "python3" ]] && proc="python"
-            [[ "$binary" == "omz" ]] && proc="zsh"
-            
-            if pgrep -fi "$proc" > /dev/null;
- then
-                if [[ $active_found -eq 0 ]]; then
-                    echo -e "${YELLOW}${BOLD}⚠️  Active Sessions Detected:${RESET}"
-                    active_found=1
-                fi
-                echo -e "   - $display is currently running"
-            fi
-        fi
-    done
-    
-    if [[ $active_found -eq 1 ]]; then
-        echo -e "${YELLOW}   Updating running tools may cause interruptions.${RESET}\n"
-    fi
-}
-
-analyze_system() {
-    echo -e "${BOLD}Analyzing System Components...${RESET}"
-    echo -e "${DIM}   Fetching Homebrew intelligence...${RESET}"
-    
-    # Cache Brew data
-    BREW_CACHE=$(HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 brew outdated --verbose 2>&1 | grep -v "^==>" | grep -v "Adjust how often" | grep -v "Auto-updated" | grep -v "Updated.*taps" | grep -v "New Formulae" | grep -v "New Casks" | grep -v "You have.*outdated")
-    BREW_CASK_LIST=$(brew list --cask -1)
-
-    printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
-    echo "--------------------------------------------------------"
-
-    CODE_UPDATES_COUNT=0
-    TERM_UPDATES_COUNT=0
-    IDE_UPDATES_COUNT=0
-    UTILS_UPDATES_COUNT=0
-    RUNTIME_UPDATES_COUNT=0
-    SYS_UPDATES_COUNT=0
-
-    print_group() {
-        local target_cat=$1
-        local title=$2
-        echo -e "${DIM}--- $title ---${RESET}"
-        
-        for tool_entry in "${TOOLS[@]}"; do
-            IFS=':' read -r category binary pkg display method <<< "$tool_entry"
-            if [[ "$category" == "$target_cat" ]]; then
-                local current=$(get_local_version "$binary")
-                local icon=""
-                local target="-"
-                local target_display="-"
-                local color=""
-                local needs_update=0
-
-                if [[ "$current" == "MISSING" ]]; then
-                    icon="${DIM}○${RESET}"
-                    color="${DIM}"
-                    current="Not Installed"
-                else
-                    target=$(get_remote_version "$method" "$pkg" "$current")
-                    
-                    if [[ "$target" == "Unmanaged" ]]; then
-                        icon="${CYAN}?${RESET}"
-                        color="${DIM}"
-                        target_display="${DIM}(Not in Brew)${RESET}"
-                        needs_update=0
-                    elif [[ "$target" == "Manual" ]]; then
-                        icon="${CYAN}M${RESET}"
-                        color="${DIM}"
-                        target_display="${DIM}(Manual Check)${RESET}"
-                        needs_update=0
-                    elif [[ "$target" == "Latest" ]]; then
-                        icon="${GREEN}●${RESET}"
-                        target_display="Manual Check"
-                        needs_update=0 
-                    elif [[ "$target" != "-" ]] && [[ "$current" != "$target" ]]; then
-                        needs_update=1
-                        color="${YELLOW}"
-                        icon="${YELLOW}↑${RESET}"
-                        target_display="${MAGENTA}$target${RESET}"
-                    else
-                        icon="${GREEN}●${RESET}"
-                        # Current == Target (Up to date)
-                        target_display="${DIM}✔ Up to date${RESET}"
-                    fi
-                fi
-                
-                if [[ $needs_update -eq 1 ]]; then
-                    [[ "$category" == "CODE" ]] && ((CODE_UPDATES_COUNT++))
-                    [[ "$category" == "TERM" ]] && ((TERM_UPDATES_COUNT++))
-                    [[ "$category" == "IDE" ]] && ((IDE_UPDATES_COUNT++))
-                    [[ "$category" == "UTILS" ]] && ((UTILS_UPDATES_COUNT++))
-                    [[ "$category" == "RUNTIME" ]] && ((RUNTIME_UPDATES_COUNT++))
-                    [[ "$category" == "SYS" ]] && ((SYS_UPDATES_COUNT++))
-                fi
-
-                printf "% -13b ${color}%-18s %-15s %b${RESET}\n" "$icon" "$display" "$current" "$target_display"
-            fi
-        done
-    }
-
-    print_group "CODE" "AI Development Tools"
-    echo ""
-    print_group "TERM" "Terminal Emulators"
-    echo ""
-    print_group "IDE" "IDEs and Code Editors"
-    echo ""
-    print_group "UTILS" "Safe Utilities"
-    echo ""
-    print_group "RUNTIME" "Critical Runtimes (High Risk)"
-    echo ""
-    print_group "SYS" "System Managers"
-    echo ""
-}
-
-perform_update() {
-    local method=$1
-    local name=$2
-    local pkg=$3
-    local current=$4
-    local target=$5
-
-    if [[ "$target" == "Unmanaged" ]]; then
-        echo -e "${DIM}   ○ $name is not managed by Brew. Skipping.${RESET}"
-        return
-    fi
-    
-    if [[ "$target" == "Manual" ]]; then
-        echo -e "${DIM}   ○ $name requires manual update. Skipping.${RESET}"
-        return
-    fi
-
-    if [[ "$target" == "$current" ]]; then
-         echo -e "${DIM}   ○ $name is already up to date. Skipped.${RESET}"
-         return
-    fi
-
-    echo -e "${BOLD}${CYAN}⚡ Updating $name...${RESET}"
-
-    local success=0
-    case $method in
-        brew) brew update && brew upgrade && brew cleanup && success=1 ;;
-        npm_sys) npm update -g && success=1 ;;
-        npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
-        claude) 
-            # Support Homebrew Cask, curl, and npm installations
-            if brew list --cask claude-code &>/dev/null;
- then
-                brew upgrade --cask claude-code && success=1
-            elif [ -f "$HOME/.claude/local/claude" ]; then
-                # Curl installation - reinstall via curl
-                curl -fsSL https://claude.ai/install.sh | bash && success=1
-            else
-                # NPM installation
-                npm install -g "$pkg@latest" && success=1
-            fi
-            ;; 
-        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;; 
-        toad) curl -fsSL https://batrachian.ai/install | sh && success=1 ;; 
-        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;; 
-        omz) (cd ~/.oh-my-zsh && git pull) && success=1 ;; 
-        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;; 
-        mac_app) 
-            if brew list --cask "$pkg" &>/dev/null;
- then
-                brew upgrade --cask "$pkg" && success=1
-            else
-                echo -e "${YELLOW}   ! $name is not managed by Homebrew.${RESET}"
-            fi
-            ;; 
-        antigravity)
-            echo -e "   Please use the internal updater within Antigravity."
-            ;;
-        *) echo "   No update method found." ;; 
-    esac
-
-    if [ $success -eq 1 ]; then
-        echo -e "${GREEN}   ✔ Success${RESET}\n"
-        UPDATED_TOOLS+=("$name ($current -> $target)")
-    else
-        echo -e "${RED}   ✘ Error updating $name${RESET}\n"
-    fi
-}
-
-show_summary() {
-    echo -e "${BOLD}--- SPARK UPDATE SUMMARY ---${RESET}"
-    if [ ${#UPDATED_TOOLS[@]} -eq 0 ]; then
-        echo -e "${DIM}No tools were updated.${RESET}"
-    else
-        for tool in "${UPDATED_TOOLS[@]}"; do
-            echo -e "${GREEN}[✔] $tool${RESET}"
-        done
-    fi
-    echo ""
-}
+done
 
 # --- Main Logic ---
 banner
@@ -433,29 +34,61 @@ echo -e "  ${BOLD}[2]${RESET} ${MAGENTA}Terminals & IDEs${RESET}   (iTerm, Winds
 echo -e "  ${BOLD}[3]${RESET} ${GREEN}Utilities${RESET}          (Git, Tmux, Zellij, Oh My Zsh, etc.)"
 echo -e "  ${BOLD}[4]${RESET} ${RED}Runtimes${RESET}           (Node, Python, Go, Postgres) ${RED}⚠️${RESET}"
 echo -e "  ${BOLD}[5]${RESET} ${YELLOW}Full System${RESET}        (Everything included)"
-echo -e "  ${BOLD}[6]${RESET} Exit"
+echo -e "  ${BOLD}[6]${RESET} Open Manual Links    (For External/Manual apps)"
+echo -e "  ${BOLD}[7]${RESET} Exit"
 echo ""
 
-read -p "Select option [1]: " mode
-mode=${mode:-1}
-
-if [[ "$mode" == "6" ]]; then echo "Bye!"; exit 0; fi
+read -p "Select option [1-7] or enter Tool ID/Name: " input
+input=${input:-1}
 
 TARGET_CATEGORY=""
-if [[ "$mode" == "1" ]]; then TARGET_CATEGORY="CODE"; fi
-if [[ "$mode" == "2" ]]; then TARGET_CATEGORY="TERM_IDE"; fi
-if [[ "$mode" == "3" ]]; then TARGET_CATEGORY="UTILS"; fi
-if [[ "$mode" == "4" ]]; then TARGET_CATEGORY="RUNTIME"; fi
-if [[ "$mode" == "5" ]]; then TARGET_CATEGORY="ALL"; fi
+TARGET_TOOL_ID=""
+METHOD_MODE="UPDATE"
+
+# Logic to determine if input is a Menu Option or a Tool
+if [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge 1 ] && [ "$input" -le 7 ]; then
+    # Standard Menu Selection
+    if [[ "$input" == "7" ]]; then echo "Bye!"; exit 0; fi
+    if [[ "$input" == "1" ]]; then TARGET_CATEGORY="CODE"; fi
+    if [[ "$input" == "2" ]]; then TARGET_CATEGORY="TERM_IDE"; fi
+    if [[ "$input" == "3" ]]; then TARGET_CATEGORY="UTILS"; fi
+    if [[ "$input" == "4" ]]; then TARGET_CATEGORY="RUNTIME"; fi
+    if [[ "$input" == "5" ]]; then TARGET_CATEGORY="ALL"; fi
+    if [[ "$input" == "6" ]]; then 
+        TARGET_CATEGORY="ALL"
+        METHOD_MODE="OPEN_LINKS"
+    fi
+else
+    # Targeted Tool Selection (ID or Name)
+    TARGET_CATEGORY="ALL" # We search all, but filter by binary
+    
+    # Check if input matches an ID (supports raw number OR S-XX format)
+    clean_id=$(echo "$input" | sed 's/[Ss]-//')
+    if [[ "$clean_id" =~ ^[0-9]+$ ]] && [ "$clean_id" -le "$TOTAL_TOOLS" ]; then
+        # Remove leading zeros if present for array index
+        idx=$((10#$clean_id))
+        TARGET_TOOL_ID="${TOOL_ID_MAP[$idx]}"
+        TARGET_TOOL_NAME="${TOOL_ID_MAP[$idx]}" # For display
+        echo -e "${DIM}Targeting Spark ID S-$(printf "%02d" $idx): $TARGET_TOOL_ID${RESET}"
+    else
+        # Assume input is a name (e.g., "claude")
+        TARGET_TOOL_ID="$input"
+        TARGET_TOOL_NAME="$input"
+        echo -e "${DIM}Targeting Tool Name: $TARGET_TOOL_ID${RESET}"
+    fi
+fi
 
 # Safety Check for Runtimes
 if [[ "$TARGET_CATEGORY" == "RUNTIME" ]] || [[ "$TARGET_CATEGORY" == "ALL" ]]; then
-    echo -e "\n${RED}${BOLD}⚠️  WARNING: You are about to update critical runtimes (Node, Python, DBs).${RESET}"
-    echo -e "${RED}    This might break existing projects or virtual environments.${RESET}"
-    read -p "    Are you absolutely sure? (type 'yes' to proceed): " confirm
-    if [[ "$confirm" != "yes" ]]; then
-        echo "    Operation aborted by user."
-        exit 0
+    # Skip safety check if we are targeting a specific single tool that is NOT a runtime
+    if [[ -z "$TARGET_TOOL_ID" ]] && [[ "$METHOD_MODE" != "OPEN_LINKS" ]]; then
+        echo -e "\n${RED}${BOLD}⚠️  WARNING: You are about to update critical runtimes (Node, Python, DBs).${RESET}"
+        echo -e "${RED}    This might break existing projects or virtual environments.${RESET}"
+        read -p "    Are you absolutely sure? (type 'yes' to proceed): " confirm
+        if [[ "$confirm" != "yes" ]]; then
+            echo "    Operation aborted by user."
+            exit 0
+        fi
     fi
 fi
 
@@ -465,9 +98,18 @@ for tool_entry in "${TOOLS[@]}"; do
     IFS=':' read -r category binary pkg display method <<< "$tool_entry"
 
     MATCH=0
-    if [[ "$TARGET_CATEGORY" == "ALL" ]]; then MATCH=1; fi
-    if [[ "$TARGET_CATEGORY" == "TERM_IDE" ]] && ([[ "$category" == "TERM" ]] || [[ "$category" == "IDE" ]]); then MATCH=1; fi
-    if [[ "$category" == "$TARGET_CATEGORY" ]]; then MATCH=1; fi
+    
+    # If a specific tool is targeted, override category logic
+    if [[ -n "$TARGET_TOOL_ID" ]]; then
+        if [[ "$binary" == "$TARGET_TOOL_ID" ]]; then
+            MATCH=1
+        fi
+    else
+        # Standard Category Matching
+        if [[ "$TARGET_CATEGORY" == "ALL" ]]; then MATCH=1; fi
+        if [[ "$TARGET_CATEGORY" == "TERM_IDE" ]] && ([[ "$category" == "TERM" ]] || [[ "$category" == "IDE" ]]); then MATCH=1; fi
+        if [[ "$category" == "$TARGET_CATEGORY" ]]; then MATCH=1; fi
+    fi
 
     if [[ $MATCH -eq 1 ]]; then
         if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]] || [[ "$method" == "antigravity" ]]; then
