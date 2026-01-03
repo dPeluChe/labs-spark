@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPARK v0.3.1 - Surgical Precision CLI Updater
+# SPARK v0.4.0 - Surgical Precision CLI Updater
 # Codenamed: Spark (The life-force of Transformers)
 
 # --- Configuration & Styling ---
@@ -35,6 +35,8 @@ TOOLS=(
     "IDE:code:visual-studio-code:VS Code:mac_app"
     "IDE:cursor:cursor:Cursor IDE:mac_app"
     "IDE:zed:zed:Zed Editor:mac_app"
+    "IDE:windsurf:windsurf:Windsurf:mac_app"
+    "IDE:antigravity:antigravity:Antigravity:antigravity"
 
     # Safe Utilities (Low Risk)
     "UTILS:omz:oh-my-zsh:Oh My Zsh:omz"
@@ -69,6 +71,7 @@ RUNTIME_UPDATES_COUNT=0
 SYS_UPDATES_COUNT=0
 UPDATED_TOOLS=()
 BREW_CACHE=""
+BREW_CASK_LIST=""
 
 # --- Helper Functions ---
 
@@ -81,7 +84,7 @@ banner() {
     echo " ___/ / ____/ ___ / _, _/ /| |  "
     echo "/____/_/   /_/  |/_/ |_/_/ |_|  "
     echo -e "${RESET}"
-    echo -e "${BLUE}  Surgical Precision Update Utility v0.3.1${RESET}"
+    echo -e "${BLUE}  Surgical Precision Update Utility v0.4.0${RESET}"
     echo -e "${DIM}  ========================================${RESET}\n"
 }
 
@@ -101,6 +104,17 @@ get_local_version() {
         [ -d "/Applications/Cursor.app" ] && defaults read /Applications/Cursor.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
     elif [[ "$binary" == "zed" ]]; then
         [ -d "/Applications/Zed.app" ] && defaults read /Applications/Zed.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "windsurf" ]]; then
+        [ -d "/Applications/Windsurf.app" ] && defaults read /Applications/Windsurf.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null && return
+    elif [[ "$binary" == "antigravity" ]]; then
+        if [ -f "$HOME/.antigravity/antigravity/bin/antigravity" ]; then
+             "$HOME/.antigravity/antigravity/bin/antigravity" --version 2>/dev/null | head -n 1 | awk '{print $2}' && return
+        fi
+        if command -v antigravity &>/dev/null;
+ then
+            antigravity --version 2>/dev/null | head -n 1 | awk '{print $2}' && return
+        fi
+        echo "MISSING" && return
     fi
 
     if ! command -v "$binary" &> /dev/null;
@@ -115,9 +129,9 @@ get_local_version() {
     elif [[ "$binary" == "npm" ]]; then
         ver=$(npm --version)
     elif [[ "$binary" == "claude" ]]; then
-         # Try direct version command first (curl installation)
+         # Try direct version command first (curl installation or brew)
          ver=$($binary --version 2>/dev/null | awk '{print $1}')
-         # Fallback to npm if not found
+         # Fallback to npm if not found and not a simple binary
          if [[ -z "$ver" ]] || [[ "$ver" == "MISSING" ]]; then
             ver=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}')
          fi
@@ -158,24 +172,42 @@ get_remote_version() {
     if [[ "$method" == "npm_pkg" ]] || [[ "$method" == "npm_sys" ]]; then
         npm view "$package" version 2>/dev/null
     elif [[ "$method" == "brew_pkg" ]] || [[ "$method" == "mac_app" ]]; then
+        # For Mac Apps, first check if it is installed via Brew Cask
+        if [[ "$method" == "mac_app" ]]; then
+            if ! echo "$BREW_CASK_LIST" | grep -q "^$package$"; then
+                echo "Unmanaged"
+                return
+            fi
+        fi
+
         local update_info=$(echo "$BREW_CACHE" | grep "^$package ")
         if [[ -n "$update_info" ]]; then
+            # Format is usually: name (current) < (latest)
             echo "$update_info" | awk '{print $NF}'
         else
+            # If not in outdated, it's either up to date or unmanaged
             echo "$local_ver"
         fi
     elif [[ "$method" == "claude" ]]; then
-        # Query npm for Claude CLI
-        npm view @anthropic-ai/claude-code version 2>/dev/null || echo "$local_ver"
+        # Query npm for Claude CLI if we can't get it from brew cache
+        if echo "$BREW_CASK_LIST" | grep -q "claude-code"; then
+             local update_info=$(echo "$BREW_CACHE" | grep "^claude-code ")
+             if [[ -n "$update_info" ]]; then
+                echo "$update_info" | awk '{print $NF}'
+             else
+                echo "$local_ver"
+             fi
+        else
+            npm view @anthropic-ai/claude-code version 2>/dev/null || echo "$local_ver"
+        fi
     elif [[ "$method" == "toad" ]]; then
-        # Query PyPI for latest version
         curl -s "https://pypi.org/pypi/batrachian-toad/json" 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4
     elif [[ "$method" == "droid" ]]; then
-        # Query npm for factory-cli (Droid's package name)
         npm view factory-cli version 2>/dev/null || echo "$local_ver"
     elif [[ "$method" == "opencode" ]]; then
-        # OpenCode updates via its own command
         echo "$local_ver"
+    elif [[ "$method" == "antigravity" ]]; then
+        echo "Manual"
     else
         echo "Latest"
     fi
@@ -195,6 +227,7 @@ check_active_sessions() {
             [[ "$binary" == "code" ]] && proc="Visual Studio Code"
             [[ "$binary" == "cursor" ]] && proc="Cursor"
             [[ "$binary" == "zed" ]] && proc="Zed"
+            [[ "$binary" == "windsurf" ]] && proc="Windsurf"
             [[ "$binary" == "python3" ]] && proc="python"
             [[ "$binary" == "omz" ]] && proc="zsh"
             
@@ -217,8 +250,11 @@ check_active_sessions() {
 analyze_system() {
     echo -e "${BOLD}Analyzing System Components...${RESET}"
     echo -e "${DIM}   Fetching Homebrew intelligence...${RESET}"
-    BREW_CACHE=$(HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 brew outdated --verbose 2>&1 | grep -v "^==>" | grep -v "Adjust how often" | grep -v "Auto-updated" | grep -v "Updated.*taps" | grep -v "New Formulae" | grep -v "New Casks" | grep -v "You have.*outdated")
     
+    # Cache Brew data
+    BREW_CACHE=$(HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 brew outdated --verbose 2>&1 | grep -v "^==>" | grep -v "Adjust how often" | grep -v "Auto-updated" | grep -v "Updated.*taps" | grep -v "New Formulae" | grep -v "New Casks" | grep -v "You have.*outdated")
+    BREW_CASK_LIST=$(brew list --cask -1)
+
     printf "${BOLD}%-4s %-18s %-15s %-15s${RESET}\n" "Sts" "Tool" "Current" "Target"
     echo "--------------------------------------------------------"
 
@@ -249,11 +285,20 @@ analyze_system() {
                     color="${DIM}"
                     current="Not Installed"
                 else
-                    icon="${GREEN}●${RESET}"
-                    color="${RESET}"
                     target=$(get_remote_version "$method" "$pkg" "$current")
                     
-                    if [[ "$target" == "Latest" ]]; then
+                    if [[ "$target" == "Unmanaged" ]]; then
+                        icon="${CYAN}?${RESET}"
+                        color="${DIM}"
+                        target_display="${DIM}(Not in Brew)${RESET}"
+                        needs_update=0
+                    elif [[ "$target" == "Manual" ]]; then
+                        icon="${CYAN}M${RESET}"
+                        color="${DIM}"
+                        target_display="${DIM}(Manual Check)${RESET}"
+                        needs_update=0
+                    elif [[ "$target" == "Latest" ]]; then
+                        icon="${GREEN}●${RESET}"
                         target_display="Manual Check"
                         needs_update=0 
                     elif [[ "$target" != "-" ]] && [[ "$current" != "$target" ]]; then
@@ -262,6 +307,7 @@ analyze_system() {
                         icon="${YELLOW}↑${RESET}"
                         target_display="${MAGENTA}$target${RESET}"
                     else
+                        icon="${GREEN}●${RESET}"
                         # Current == Target (Up to date)
                         target_display="${DIM}✔ Up to date${RESET}"
                     fi
@@ -302,6 +348,16 @@ perform_update() {
     local current=$4
     local target=$5
 
+    if [[ "$target" == "Unmanaged" ]]; then
+        echo -e "${DIM}   ○ $name is not managed by Brew. Skipping.${RESET}"
+        return
+    fi
+    
+    if [[ "$target" == "Manual" ]]; then
+        echo -e "${DIM}   ○ $name requires manual update. Skipping.${RESET}"
+        return
+    fi
+
     if [[ "$target" == "$current" ]]; then
          echo -e "${DIM}   ○ $name is already up to date. Skipped.${RESET}"
          return
@@ -314,30 +370,36 @@ perform_update() {
         brew) brew update && brew upgrade && brew cleanup && success=1 ;;
         npm_sys) npm update -g && success=1 ;;
         npm_pkg) npm install -g "$pkg@latest" && success=1 ;;
-        claude)
-            # Support both curl and npm installations
-            if [ -f "$HOME/.claude/local/claude" ]; then
+        claude) 
+            # Support Homebrew Cask, curl, and npm installations
+            if brew list --cask claude-code &>/dev/null;
+ then
+                brew upgrade --cask claude-code && success=1
+            elif [ -f "$HOME/.claude/local/claude" ]; then
                 # Curl installation - reinstall via curl
                 curl -fsSL https://claude.ai/install.sh | bash && success=1
             else
                 # NPM installation
                 npm install -g "$pkg@latest" && success=1
             fi
-            ;;
-        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;;
-        toad) curl -fsSL https://batrachian.ai/install | sh && success=1 ;;
-        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;;
-        omz) (cd ~/.oh-my-zsh && git pull) && success=1 ;;
-        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;;
-        mac_app)
+            ;; 
+        droid) curl -fsSL https://app.factory.ai/cli | sh && success=1 ;; 
+        toad) curl -fsSL https://batrachian.ai/install | sh && success=1 ;; 
+        opencode) (opencode upgrade || curl -fsSL https://opencode.ai/install | bash) && success=1 ;; 
+        omz) (cd ~/.oh-my-zsh && git pull) && success=1 ;; 
+        brew_pkg) (brew upgrade "$pkg" 2>/dev/null || echo -e "     ${YELLOW}No update needed or package not pinned.${RESET}") && success=1 ;; 
+        mac_app) 
             if brew list --cask "$pkg" &>/dev/null;
  then
                 brew upgrade --cask "$pkg" && success=1
             else
                 echo -e "${YELLOW}   ! $name is not managed by Homebrew.${RESET}"
             fi
+            ;; 
+        antigravity)
+            echo -e "   Please use the internal updater within Antigravity."
             ;;
-        *) echo "   No update method found." ;;
+        *) echo "   No update method found." ;; 
     esac
 
     if [ $success -eq 1 ]; then
@@ -367,7 +429,7 @@ check_active_sessions
 
 echo -e "${BOLD}Update Modes:${RESET}"
 echo -e "  ${BOLD}[1]${RESET} ${CYAN}AI Tools${RESET}           (Claude, Droid, Gemini, Toad, etc.)"
-echo -e "  ${BOLD}[2]${RESET} ${MAGENTA}Terminals & IDEs${RESET}   (iTerm, Ghostty, VSCode, Cursor, Zed)"
+echo -e "  ${BOLD}[2]${RESET} ${MAGENTA}Terminals & IDEs${RESET}   (iTerm, Windsurf, Antigravity, VSCode)"
 echo -e "  ${BOLD}[3]${RESET} ${GREEN}Utilities${RESET}          (Git, Tmux, Zellij, Oh My Zsh, etc.)"
 echo -e "  ${BOLD}[4]${RESET} ${RED}Runtimes${RESET}           (Node, Python, Go, Postgres) ${RED}⚠️${RESET}"
 echo -e "  ${BOLD}[5]${RESET} ${YELLOW}Full System${RESET}        (Everything included)"
@@ -408,7 +470,7 @@ for tool_entry in "${TOOLS[@]}"; do
     if [[ "$category" == "$TARGET_CATEGORY" ]]; then MATCH=1; fi
 
     if [[ $MATCH -eq 1 ]]; then
-        if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]]; then
+        if command -v "$binary" &> /dev/null || [[ "$method" == "mac_app" ]] || [[ "$method" == "antigravity" ]]; then
             current=$(get_local_version "$binary")
             target=$(get_remote_version "$method" "$pkg" "$current")
             perform_update "$method" "$display" "$pkg" "$current" "$target"

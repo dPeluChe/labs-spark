@@ -104,7 +104,7 @@ SPARK follows a **surgical precision** approach:
 |----------|-----------|-------|----------------|
 | **CODE** | Low | Claude CLI, Droid, Gemini, OpenCode, Codex, Crush, Toad | npm_pkg, droid, toad, opencode, brew_pkg |
 | **TERM** | Low | iTerm2, Ghostty, Warp | mac_app (Homebrew casks) |
-| **IDE** | Low | Visual Studio Code, Cursor, Zed Editor | mac_app (Homebrew casks) |
+| **IDE** | Low | Visual Studio Code, Cursor, Zed Editor, Windsurf, Antigravity | mac_app, antigravity |
 | **UTILS** | Low | Oh My Zsh, Zellij, Tmux, Git, Bash, SQLite, Watchman, Direnv, Heroku, Pre-commit | omz, brew_pkg |
 | **RUNTIME** | **High** | Node.js, Python 3.13, Go, Ruby, PostgreSQL 16 | brew_pkg (requires confirmation) |
 | **SYS** | Medium | Homebrew, NPM globals | brew, npm_sys |
@@ -121,6 +121,7 @@ SPARK follows a **surgical precision** approach:
 - **toad**: Curl-based installer (`curl -fsSL https://batrachian.ai/install | sh`), remote version from PyPI API
 - **opencode**: Custom upgrade command with fallback (`opencode upgrade || curl install`)
 - **omz**: Git pull in Oh My Zsh directory (`cd ~/.oh-my-zsh && git pull`)
+- **antigravity**: Manual check indicator (internal updater)
 
 ### AI Tools Version Detection
 
@@ -175,6 +176,7 @@ Edit the `TOOLS` array (lines 19-54):
 
 ## Version History
 
+- **v0.4.0**: IDE Expansion (Windsurf, Antigravity) + Smart status indicators (Not in Brew/Manual Check)
 - **v0.3.1**: AI Tools Intelligence - Accurate version detection for Claude (curl/npm dual support), Droid, OpenCode, Toad with remote version checking via PyPI/npm APIs
 - **v0.3.0**: Expanded coverage - New IDE category (VSCode, Cursor, Zed), Oh My Zsh support, Toad CLI, cleaner Homebrew output, reorganized update modes
 - **v0.2.5**: Visual clarity - "✔ Up to date" message instead of duplicate version numbers

@@ -6,6 +6,8 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 
 ## 🚀 Features
 
+- **v0.4.0 IDE Expansion**: Added support for Windsurf and Antigravity IDEs.
+- **v0.4.0 Smart Status**: Improved detection for unmanaged apps ("Not in Brew") and manual check requirements ("Manual Check").
 - **v0.3.1 AI Tools Intelligence**: Accurate version detection for Claude, Droid, OpenCode, and Toad with real-time remote version checking via PyPI and npm APIs.
 - **v0.3.0 Expanded Coverage**: New IDE category (VSCode, Cursor, Zed), Oh My Zsh support, Toad CLI integration, and cleaner Homebrew output.
 - **v0.2.5 Visual Clarity**: Replaces redundant version numbers with a clean "✔ Up to date" message when no actions are needed.
@@ -27,7 +29,7 @@ Inspired by the life-force of the Transformers (Autobots), Spark provides a clea
 - iTerm2, Ghostty, Warp Terminal.
 
 ### IDEs and Code Editors (IDE)
-- Visual Studio Code, Cursor, Zed Editor.
+- Visual Studio Code, Cursor, Zed Editor, Windsurf, Antigravity.
 
 ### Safe Utilities (UTILS)
 - **Shell**: Oh My Zsh, Zellij, Tmux.
