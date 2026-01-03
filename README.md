@@ -1,89 +1,75 @@
-# ⚡ SPARK
+# ⚡ SPARK TUI
 
-**SPARK** (System Intelligence & Update Utility) is a professional, lightweight CLI tool designed to keep your development environment and AI tools synchronized. 
+**SPARK** is a professional, cinematic Terminal User Interface (TUI) for managing development environment updates with surgical precision.
 
-Inspired by the life-force of the Transformers (Autobots), Spark provides a clean, grouped interface to monitor and update your mission-critical CLI tools.
+Built with **Go**, **Bubble Tea**, and **Lip Gloss**, it replaces the legacy bash script with a high-performance, concurrent, and beautiful interactive dashboard.
 
-## 🚀 Features
+## 🚀 Features (v0.5.3)
 
-- **v0.4.2 Modular Power**: Refactored architecture into `config/` and `lib/` modules for better maintainability.
-- **v0.4.2 Targeted Updates**: Introduced Spark IDs (`S-XX`) to update specific tools by ID or Name.
-- **v0.4.2 Industry Stack**: Added Infrastructure (Docker, K8s, AWS) and Productivity (JQ, FZF, Ripgrep) categories.
-- **v0.4.0 IDE Expansion**: Added support for Windsurf and Antigravity IDEs.
-- **v0.3.1 AI Tools Intelligence**: Accurate version detection for Claude, Droid, OpenCode, and Toad with real-time remote version checking via PyPI and npm APIs.
-- **v0.3.0 Expanded Coverage**: New IDE category (VSCode, Cursor, Zed), Oh My Zsh support, Toad CLI integration, and cleaner Homebrew output.
-- **v0.2.5 Visual Clarity**: Replaces redundant version numbers with a clean "✔ Up to date" message when no actions are needed.
-- **v0.2.4 Real-Time Intelligence**: Pre-fetches accurate upgrade data from Homebrew to distinguish between "Latest" and actual available versions.
-- **v0.2.1 Summary Report**: Displays a clean summary of all updated tools and version changes at the end of the process.
-- **v0.2.0 Surgical Precision**: Categorized updates into AI Tools, Utilities, and Critical Runtimes.
-- **v0.2.0 Runtime Safety**: Adds a "Danger Zone" confirmation before updating sensitive runtimes like Node.js or Python.
-- **v0.1.2 App Support**: Monitors terminal emulators like iTerm2, Ghostty, and Warp Terminal.
-- **Smart Updates**: Automatically compares local vs remote versions and skips tools that are already up to date.
-- **Intelligence Dashboard**: Grouped view of all system components.
-- **Session Protection**: Scans for active processes/sessions before updating.
+### 🎨 Cinematic Experience
+- **Splash Screen**: Animated startup sequence.
+- **Grid Dashboard**: 2-column layout with categorized cards.
+- **Visual Status**: Real-time checking, updating, and success indicators.
 
-## 🛠 Supported Tools
+### ⚡ Performance
+- **Parallel Scanning**: Checks 40+ tools simultaneously using Goroutines.
+- **Instant Navigation**: Jump between categories with shortcuts (`C`, `T`, `I`...).
+- **Smart Selection**: Toggle individual items (`Space`) or entire groups (`G`).
 
-### AI Development Tools (CODE)
-- Claude CLI, Droid, Gemini, OpenCode, Codex, Crush, Toad.
+### 🛡️ Safety First
+- **Danger Zone**: Explicit confirmation modal when updating critical runtimes (Node, Python, Postgres).
+- **Update Focus**: visual isolation of active updates to reduce noise.
 
-### Terminal Emulators (TERM)
-- iTerm2, Ghostty, Warp Terminal.
+## 🛠 Supported Stack
 
-### IDEs and Code Editors (IDE)
-- Visual Studio Code, Cursor, Zed Editor, Windsurf, Antigravity.
-
-### Safe Utilities (UTILS)
-- **Shell**: Oh My Zsh, Zellij, Tmux.
-- **Core**: Git, Bash, SQLite, Heroku, Pre-commit, Watchman, Direnv.
-
-### Critical Runtimes (RUNTIME) ⚠️
-- **Languages**: Node.js, Python 3.13, Go, Ruby.
-- **Databases**: PostgreSQL 16.
-*Updates for this category require explicit confirmation.*
-
-### System Tools (SYS)
-- Homebrew, NPM Global Packages.
+| Category | Shortcuts | Tools |
+|----------|-----------|-------|
+| **AI Development** | `[C]` | Claude, Droid, Gemini, OpenCode, Codex, Crush, Toad |
+| **Terminals** | `[T]` | iTerm2, Ghostty, Warp |
+| **IDEs** | `[I]` | VS Code, Cursor, Zed, Windsurf, Antigravity |
+| **Productivity** | `[P]` | JQ, FZF, Ripgrep, Bat, HTTPie, LazyGit, TLDR |
+| **Infrastructure** | `[F]` | Docker, K8s, Helm, Terraform, AWS, Ngrok |
+| **Utilities** | `[U]` | Git, Tmux, Zellij, Oh My Zsh, SQLite, Watchman |
+| **Runtimes** | `[R]` | Node.js, Python 3.13, Go, Ruby, PostgreSQL 16 |
+| **System** | `[S]` | Homebrew Core, NPM Globals |
 
 ## 📦 Installation
 
-1. **Clone or move** the `labs-spark` folder to your preferred projects directory.
-2. **Make it executable**:
-   ```bash
-   chmod +x labs-spark/spark.sh
-   ```
-3. **Add an alias** to your `.zshrc` or `.bashrc`:
-   ```bash
-   # Add this line (replace /path/to/ with your actual path)
-   alias spark='/path/to/labs-spark/spark.sh'
-   ```
-4. **Reload your shell**:
-   ```bash
-   source ~/.zshrc
-   ```
-
-## ⌨️ Usage
-
-Simply type `spark` in your terminal:
-
+### From Source
 ```bash
-spark
+# Clone repository
+git clone https://github.com/dpeluche/spark.git
+cd spark
+
+# Build and Install
+go build -ldflags="-s -w" -o spark-tui cmd/spark/main.go
+mv spark-tui ~/.local/bin/spark
+
+# Add to shell (if not already)
+echo 'alias spark="~/.local/bin/spark"' >> ~/.zshrc
 ```
 
-Follow the interactive menu to select your update strategy.
+## ⌨️ Controls
 
-## 🧠 How it Works (Internal Rules)
+| Key | Action |
+|-----|--------|
+| `↑/↓` `j/k` | Navigate items |
+| `Space` | Select/Deselect item |
+| `G` | Select/Deselect **entire group** |
+| `Tab` | Jump to next group |
+| `C, T, I...` | Jump to specific category |
+| `Enter` | **Update selected** (or current if none selected) |
+| `Q` / `Esc` | Quit |
 
-SPARK follows a strict logic to ensure system stability:
+## 🧠 Architecture
 
-1.  **Binary Discovery**: Uses `command -v` for CLI tools and searches `/Applications` for macOS apps.
-2.  **Version Extraction**: 
-    - **NPM**: Uses `npm list -g` and `npm view`.
-    - **Casks (Apps)**: Uses `defaults read` for local Info.plist and `brew info --cask` for remote.
-    - **Brew**: Uses `brew --version`.
-3.  **Session Guard**: Runs `pgrep -f` (or `pgrep -fi` for apps) before updates. 
-4.  **Smart Skipping**: If `Local Version == Remote Version`, the update is bypassed.
+Spark is a pure Go application using the [Bubble Tea](https://github.com/charmbracelet/bubbletea) framework (ELM architecture).
+
+- **`cmd/spark`**: Entry point.
+- **`internal/core`**: Tool definitions and inventory.
+- **`internal/updater`**: Version detection logic (using `os/exec`).
+- **`internal/tui`**: The UI logic, rendering, and state machine.
 
 ## 📄 License
 
-MIT - Feel free to use and improve.
+MIT
