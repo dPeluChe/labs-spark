@@ -28,70 +28,89 @@ func (d *Detector) WarmUpCache() {
 }
 
 func (d *Detector) GetLocalVersion(t core.Tool) string {
-	switch t.Binary {
-	case "iterm":
-		return getAppVersion("/Applications/iTerm.app")
-	case "ghostty":
-		return getAppVersion("/Applications/Ghostty.app")
-	case "warp":
-		return getAppVersion("/Applications/Warp.app")
-	case "code":
-		return getAppVersion("/Applications/Visual Studio Code.app")
-	case "cursor":
-		return getAppVersion("/Applications/Cursor.app")
-	case "zed":
-		return getAppVersion("/Applications/Zed.app")
-	case "windsurf":
-		return getAppVersion("/Applications/Windsurf.app")
-	case "antigravity":
-		// Check custom path first
-		if _, err := os.Stat(os.Getenv("HOME") + "/.antigravity/antigravity/bin/antigravity"); err == nil {
-			return runCmd(os.Getenv("HOME")+"/.antigravity/antigravity/bin/antigravity", "--version")
-		}
-		return runCmd("antigravity", "--version")
-	case "omz":
-		omzPath := os.Getenv("HOME") + "/.oh-my-zsh"
-		if _, err := os.Stat(omzPath); err == nil {
-			// git --git-dir=... rev-parse --short HEAD
-			cmd := exec.Command("git", "--git-dir="+omzPath+"/.git", "--work-tree="+omzPath, "rev-parse", "--short", "HEAD")
-			out, err := cmd.Output()
-			if err != nil {
-				return "Installed"
-			}
-			return strings.TrimSpace(string(out))
-		}
-		return "MISSING"
-	case "aws":
-		out := runCmd("aws", "--version") // aws-cli/2.22.35 ...
-		parts := strings.Fields(out)
-		if len(parts) > 0 {
-			// Extract 2.22.35 from aws-cli/2.22.35
-			return strings.Split(parts[0], "/")[1]
-		}
-		return out
-	case "go":
-		out := runCmd("go", "version") // go version go1.23.4 darwin/arm64
-		parts := strings.Fields(out)
-		if len(parts) >= 3 {
-			return strings.Replace(parts[2], "go", "", 1)
-		}
-		return out
-	case "claude":
-		// Try curl installation path first
-		localPath := os.Getenv("HOME") + "/.local/bin/claude"
-		if _, err := os.Stat(localPath); err == nil {
-			return runCmd(localPath, "--version")
-		}
-		return runCmd("claude", "--version")
-	default:
-		// Generic --version check
-		path, err := exec.LookPath(t.Binary)
-		if err != nil {
-			return "MISSING"
-		}
-		_ = path
-		return runCmd(t.Binary, "--version")
+	// Special handling for macOS applications
+	if t.Method == core.MethodMacApp {
+		return d.getMacAppVersion(t.Binary)
 	}
+
+	// Special handling for Oh My Zsh (git-based)
+	if t.Binary == "omz" {
+		return d.getOmzVersion()
+	}
+
+	// Special handling for Antigravity (multiple paths)
+	if t.Binary == "antigravity" {
+		return d.getAntigravityVersion()
+	}
+
+	// Generic CLI tool detection
+	return d.getCliToolVersion(t)
+}
+
+// getMacAppVersion detects version of macOS .app bundles
+func (d *Detector) getMacAppVersion(binary string) string {
+	appPaths := map[string]string{
+		"iterm":    "/Applications/iTerm.app",
+		"ghostty":  "/Applications/Ghostty.app",
+		"warp":     "/Applications/Warp.app",
+		"code":     "/Applications/Visual Studio Code.app",
+		"cursor":   "/Applications/Cursor.app",
+		"zed":      "/Applications/Zed.app",
+		"windsurf": "/Applications/Windsurf.app",
+		"docker":   "/Applications/Docker.app",
+	}
+
+	appPath, ok := appPaths[binary]
+	if !ok {
+		return "MISSING"
+	}
+
+	return getAppVersion(appPath)
+}
+
+// getOmzVersion gets Oh My Zsh git commit hash
+func (d *Detector) getOmzVersion() string {
+	omzPath := os.Getenv("HOME") + "/.oh-my-zsh"
+	if _, err := os.Stat(omzPath); err != nil {
+		return "MISSING"
+	}
+
+	cmd := exec.Command("git", "--git-dir="+omzPath+"/.git", "--work-tree="+omzPath, "rev-parse", "--short", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "Installed"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// getAntigravityVersion checks multiple possible installation paths
+func (d *Detector) getAntigravityVersion() string {
+	customPath := os.Getenv("HOME") + "/.antigravity/antigravity/bin/antigravity"
+	if _, err := os.Stat(customPath); err == nil {
+		output := runCmd(customPath, "--version")
+		return ParseToolSpecificVersion("antigravity", output)
+	}
+	output := runCmd("antigravity", "--version")
+	return ParseToolSpecificVersion("antigravity", output)
+}
+
+// getCliToolVersion detects version for standard CLI tools
+func (d *Detector) getCliToolVersion(t core.Tool) string {
+	// Check if binary exists in PATH
+	path, err := exec.LookPath(t.Binary)
+	if err != nil {
+		return "MISSING"
+	}
+	_ = path
+
+	// Run --version command
+	output := runCmd(t.Binary, "--version")
+	if output == "MISSING" {
+		return "MISSING"
+	}
+
+	// Use tool-specific parser if available, otherwise generic
+	return ParseToolSpecificVersion(t.Binary, output)
 }
 
 // Helper functions
@@ -121,30 +140,7 @@ func runCmd(name string, args ...string) string {
 		return "MISSING"
 	}
 	
-	// Basic cleanup of output (first line, first word usually)
+	// Use robust version parser
 	output := strings.TrimSpace(out.String())
-	lines := strings.Split(output, "\n")
-	if len(lines) > 0 {
-		// Custom logic per tool might be needed, but generic approach:
-		// Return the last word of the first line often works, or the whole first line
-		// For now return raw cleaned string, refinement needed per tool
-		return cleanVersionString(lines[0])
-	}
-	return "Detected"
-}
-
-func cleanVersionString(s string) string {
-	// Simple heuristic: take the version-looking part
-	// This is a placeholder for more robust regex parsing
-	fields := strings.Fields(s)
-	if len(fields) > 1 {
-		// Try to find the one starting with a number
-		for _, f := range fields {
-			if len(f) > 0 && (f[0] >= '0' && f[0] <= '9') || f[0] == 'v' {
-				return f
-			}
-		}
-		return fields[len(fields)-1]
-	}
-	return s
+	return CleanVersionString(output)
 }
