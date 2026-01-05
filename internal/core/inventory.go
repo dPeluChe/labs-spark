@@ -16,6 +16,7 @@ func GetInventory() []Tool {
 		{Name: "Codex CLI", Binary: "codex", Package: "@openai/codex", Category: CategoryCode, Method: MethodNpmPkg},
 		{Name: "Crush CLI", Binary: "crush", Package: "crush", Category: CategoryCode, Method: MethodBrewPkg},
 		{Name: "Toad CLI", Binary: "toad", Package: "batrachian-toad", Category: CategoryCode, Method: MethodToad},
+		{Name: "Ollama", Binary: "ollama", Package: "ollama", Category: CategoryCode, Method: MethodManual},
 
 		// Terminal Emulators
 		{Name: "iTerm2", Binary: "iterm", Package: "iterm2", Category: CategoryTerm, Method: MethodMacApp},

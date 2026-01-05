@@ -32,8 +32,8 @@ func (e *Executor) Update(t core.Tool) error {
 		return e.updateNpm(ctx, t) // Claude is an NPM package
 	case core.MethodOmz:
 		return e.updateOmz(ctx)
-	case core.MethodManual:
-		return fmt.Errorf("manual update required")
+	case core.MethodManual, core.MethodDroid, core.MethodToad, core.MethodOpencode:
+		return fmt.Errorf("manual update required (check vendor portal)")
 	default:
 		return fmt.Errorf("update method %s not implemented", t.Method)
 	}

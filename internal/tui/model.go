@@ -53,6 +53,8 @@ type Model struct {
 	loading       int
 	updating      int
 	totalUpdate   int            // Total items to update
+	updateQueue   []int          // Queue of items to update sequentially
+	currentUpdate int            // Index of the item currently being updated
 	progress      progress.Model // Progress bar component
 	searchQuery   string         // Current search query
 	filteredItems []int          // Indices of filtered items
@@ -154,24 +156,47 @@ func (m Model) performUpdate(i int) tea.Cmd {
 }
 
 func (m *Model) startUpdates() tea.Cmd {
-	var cmds []tea.Cmd
 	m.updating = 0
 	m.totalUpdate = 0
+	m.updateQueue = []int{}
+	m.currentUpdate = -1
 
-	// Count and start updates
+	// Build the queue
 	for i := range m.items {
 		if m.checked[i] {
-			m.items[i].Status = core.StatusUpdating
-			m.updating++
+			m.items[i].Status = core.StatusUpdating // Mark all as pending update
+			m.updateQueue = append(m.updateQueue, i)
 			m.totalUpdate++
-			cmds = append(cmds, m.performUpdate(i))
+			m.updating++ // We use updating as "remaining" count
 		}
 	}
 
-	// Add refresh ticker to update progress bar smoothly
-	cmds = append(cmds, refreshTick())
+	if len(m.updateQueue) == 0 {
+		m.state = stateSummary
+		return nil
+	}
 
-	return tea.Batch(cmds...)
+	// Start the first one
+	return tea.Batch(
+		m.processNextUpdate(),
+		refreshTick(), // Start animation
+	)
+}
+
+func (m *Model) processNextUpdate() tea.Cmd {
+	if len(m.updateQueue) == 0 {
+		return nil
+	}
+
+	// Pop next item
+	index := m.updateQueue[0]
+	m.updateQueue = m.updateQueue[1:]
+	m.currentUpdate = index
+
+	// Visual indication that this specific one is active
+	// m.items[index].Status is already StatusUpdating, but we can make it distinctive in View if needed.
+
+	return m.performUpdate(index)
 }
 
 func (m Model) checkAllLocalVersions() tea.Cmd {
@@ -253,11 +278,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.items[msg.Index].Status = core.StatusFailed
 			m.items[msg.Index].Message = msg.Message
 		}
-		m.updating--
-		if m.updating == 0 {
+		
+		m.updating-- // Decrease remaining count
+		m.currentUpdate = -1
+
+		if m.updating == 0 && len(m.updateQueue) == 0 {
 			m.state = stateSummary
+			return m, nil
 		}
-		return m, nil
+		
+		// Trigger next update
+		return m, m.processNextUpdate()
 
 	case tea.KeyMsg:
 		if m.state == statePreview {
@@ -493,8 +524,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case RefreshMsg:
-		// Keep refreshing while updating to animate progress bar
+		// Keep refreshing while updating to animate progress bar and spinner
 		if m.state == stateUpdating {
+			m.splashFrame++ // Animate spinner
+			
+			// Update progress bar animation if needed (though mostly static until count changes)
+			// Sending a TickMsg to progress model helps if it has internal animation
+			// cmd := m.progress.SetPercent(float64(m.totalUpdate-m.updating) / float64(m.totalUpdate))
+			
 			return m, refreshTick()
 		}
 	}
@@ -548,25 +585,4 @@ func (m *Model) isItemVisible(index int) bool {
 		}
 	}
 	return false
-}
-
-func (m Model) View() string {
-	if m.quitting {
-		return ""
-	}
-
-	switch m.state {
-	case stateSplash:
-		return m.ViewSplash()
-	case statePreview:
-		return m.ViewPreview()
-	case stateConfirm:
-		return m.overlayModal("")
-	case stateUpdating:
-		return m.ViewMain()
-	case stateSummary:
-		return m.ViewSummary()
-	default:
-		return m.ViewMain()
-	}
 }

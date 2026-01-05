@@ -32,6 +32,72 @@ func (m Model) ViewMain() string {
 	return appStyle.Render(content)
 }
 
+func (m Model) View() string {
+	if m.quitting {
+		return ""
+	}
+
+	switch m.state {
+	case stateSplash:
+		return m.ViewSplash()
+	case statePreview:
+		return m.ViewPreview()
+	case stateConfirm:
+		return m.overlayModal("")
+	case stateUpdating:
+		return m.ViewMain()
+	case stateSummary:
+		// Render main view as background with summary overlay
+		return m.overlaySummaryModal(m.ViewMain())
+	default:
+		return m.ViewMain()
+	}
+}
+
+// overlaySummaryModal renders the results over the main content
+func (m Model) overlaySummaryModal(background string) string {
+	successCount := 0
+	failCount := 0
+	var failureDetails []string
+
+	for _, item := range m.items {
+		// Only count items that were actually in the update queue via their status
+		if item.Status == core.StatusUpdated {
+			successCount++
+		} else if item.Status == core.StatusFailed {
+			failCount++
+			failureDetails = append(failureDetails, fmt.Sprintf("• %s: %s", item.Tool.Name, item.Message))
+		}
+	}
+
+	title := lipgloss.NewStyle().
+		Background(cPurple).
+		Foreground(cWhite).
+		Bold(true).
+		Padding(0, 1).
+		Render(" UPDATE COMPLETE ")
+
+	stats := fmt.Sprintf("\n✔ Successful: %d\n✘ Failed:     %d\n", successCount, failCount)
+	
+	content := stats
+	if len(failureDetails) > 0 {
+		content += "\nErrors:\n" + lipgloss.NewStyle().Foreground(cRed).Render(strings.Join(failureDetails, "\n"))
+	}
+	
+	content += "\n\n" + lipgloss.NewStyle().Foreground(cGray).Render("[Press ENTER to close]")
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cPurple).
+		Padding(1, 2).
+		Width(60).
+		Align(lipgloss.Center).
+		Render(lipgloss.JoinVertical(lipgloss.Center, title, content))
+
+	// Center the box on the screen
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 // ViewSplash renders the animated splash screen
 func (m Model) ViewSplash() string {
 	// Animate logo color based on frame (cycles through colors)
@@ -123,10 +189,15 @@ func (m Model) renderProgressBar() string {
 
 	// Format: "Updating: 5/10 [=========>     ] 50%"
 	label := fmt.Sprintf("Progress: %d/%d completed", completed, m.totalUpdate)
+	
+	currentTool := ""
+	if m.currentUpdate >= 0 && m.currentUpdate < len(m.items) {
+		currentTool = fmt.Sprintf("• Processing: %s", m.items[m.currentUpdate].Tool.Name)
+	}
 
-	return lipgloss.NewStyle().
-		Foreground(cBlue).
-		Render(label) + "\n" + progressBarView
+	return lipgloss.NewStyle().Foreground(cBlue).Render(label) + 
+		lipgloss.NewStyle().Foreground(cYellow).Bold(true).Render(" "+currentTool) + 
+		"\n" + progressBarView
 }
 
 // --- Header Rendering ---
@@ -225,7 +296,7 @@ func (m Model) renderToolLine(index int, item core.ToolState) string {
 	status := m.renderItemStatus(index, item)
 	name := m.formatToolName(item.Tool.Name)
 
-	lineStr := fmt.Sprintf("%s %s %-22s %s", cursor, checked, name, status)
+	lineStr := fmt.Sprintf("%s %s %-18s %s", cursor, checked, name, status)
 
 	// Apply styling based on selection
 	if m.cursor == index && m.state == stateMain {
@@ -261,9 +332,12 @@ func (m Model) renderItemStatus(index int, item core.ToolState) string {
 	if m.state == stateUpdating || m.state == stateSummary {
 		switch item.Status {
 		case core.StatusUpdating:
-			return statusUpdating
+			// Animated spinner: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
+			frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+			frame := frames[m.splashFrame%len(frames)]
+			return lipgloss.NewStyle().Foreground(cBlue).Render(frame + " Updating...")
 		case core.StatusUpdated:
-			return statusSuccess
+			return lipgloss.NewStyle().Foreground(cGreen).Render("✔ " + item.LocalVersion)
 		case core.StatusFailed:
 			return statusFailed
 		}
@@ -282,21 +356,39 @@ func (m Model) renderItemStatus(index int, item core.ToolState) string {
 		return statusChecking
 	}
 
+	// Format version display
+	versionStr := item.LocalVersion
+	if item.RemoteVersion != "..." && item.RemoteVersion != "Checking..." && item.RemoteVersion != "Unknown" {
+		if item.RemoteVersion != item.LocalVersion && item.LocalVersion != "MISSING" {
+			// Show update path: 1.0.0 -> 1.1.0
+			versionStr = fmt.Sprintf("%s %s %s",
+				lipgloss.NewStyle().Foreground(cGray).Render(item.LocalVersion),
+				lipgloss.NewStyle().Foreground(cYellow).Render("→"),
+				lipgloss.NewStyle().Foreground(cGreen).Bold(true).Render(item.RemoteVersion))
+		} else if item.RemoteVersion == item.LocalVersion {
+			versionStr = lipgloss.NewStyle().Foreground(cGray).Render(item.LocalVersion)
+		}
+	}
+
 	switch item.Status {
 	case core.StatusMissing:
 		return statusMissing
+	case core.StatusOutdated:
+		return versionStr
 	case core.StatusInstalled:
-		// Special case: if version string is "MISSING", show it as warning
 		if item.LocalVersion == "MISSING" {
 			return lipgloss.NewStyle().Foreground(cYellow).Render("MISSING")
 		}
-		return statusUpToDate
+		// If we have remote info and they match, it's truly up to date
+		if item.RemoteVersion == item.LocalVersion && item.LocalVersion != "..." {
+			return lipgloss.NewStyle().Foreground(cGray).Render(item.LocalVersion + " " + "✓")
+		}
+		return versionStr
 	default:
-		// Catch any "MISSING" strings that slip through
 		if item.LocalVersion == "MISSING" {
 			return lipgloss.NewStyle().Foreground(cYellow).Render("MISSING")
 		}
-		return item.LocalVersion
+		return versionStr
 	}
 }
 
