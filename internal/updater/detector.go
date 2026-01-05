@@ -3,9 +3,11 @@ package updater
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dpeluche/spark/internal/core"
@@ -13,18 +15,121 @@ import (
 
 // Detector handles version checking logic
 type Detector struct {
-	brewCache     string
-	brewCaskCache string
+	cacheMutex    sync.RWMutex
+	outdatedCache map[string]string // Package Name -> Latest Version
+	hasWarmedUp   bool
 }
 
 func NewDetector() *Detector {
-	return &Detector{}
+	return &Detector{
+		outdatedCache: make(map[string]string),
+	}
 }
 
 // WarmUpCache fetches brew info once to speed up subsequent checks
 func (d *Detector) WarmUpCache() {
-	// In a real implementation, we would run 'brew outdated --verbose' here and store it.
-	// For simplicity in this step, we'll keep it basic or implement later.
+	d.cacheMutex.Lock()
+	defer d.cacheMutex.Unlock()
+
+	if d.hasWarmedUp {
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Fetch Brew Outdated
+	go func() {
+		defer wg.Done()
+		d.fetchBrewOutdated()
+	}()
+
+	// Fetch NPM Outdated
+	go func() {
+		defer wg.Done()
+		d.fetchNpmOutdated()
+	}()
+
+	wg.Wait()
+	d.hasWarmedUp = true
+}
+
+type brewOutdatedItem struct {
+	Name           string `json:"name"`
+	CurrentVersion string `json:"current_version"` // This is actually the "latest" available in brew formulae usually?
+	// Brew JSON output for outdated:
+	// [{"name":"fzf","installed_versions":["0.45.0"],"current_version":"0.46.0",...}]
+}
+
+func (d *Detector) fetchBrewOutdated() {
+	// brew outdated --json=v2
+	cmd := exec.Command("brew", "outdated", "--json=v2")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	// Ignore errors, brew outdated returns non-zero if outdated items exist
+	_ = cmd.Run()
+
+	var data struct {
+		Formulae []brewOutdatedItem `json:"formulae"`
+		Casks    []brewOutdatedItem `json:"casks"`
+	}
+
+	if err := json.Unmarshal(out.Bytes(), &data); err == nil {
+		for _, item := range data.Formulae {
+			d.outdatedCache[item.Name] = item.CurrentVersion
+		}
+		for _, item := range data.Casks {
+			d.outdatedCache[item.Name] = item.CurrentVersion
+		}
+	}
+}
+
+type npmOutdatedItem struct {
+	Current  string `json:"current"`
+	Wanted   string `json:"wanted"`
+	Latest   string `json:"latest"`
+	Location string `json:"location"`
+}
+
+func (d *Detector) fetchNpmOutdated() {
+	// npm outdated -g --json
+	cmd := exec.Command("npm", "outdated", "-g", "--json")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	// Ignore errors
+	_ = cmd.Run()
+
+	var data map[string]npmOutdatedItem
+	if err := json.Unmarshal(out.Bytes(), &data); err == nil {
+		for pkg, info := range data {
+			d.outdatedCache[pkg] = info.Latest
+		}
+	}
+}
+
+func (d *Detector) GetRemoteVersion(t core.Tool, localVersion string) string {
+	d.cacheMutex.RLock()
+	defer d.cacheMutex.RUnlock()
+
+	// If we haven't warmed up or cache is empty, we might return "Unknown" or force a check.
+	// But assuming WarmUp runs first.
+
+	if localVersion == "MISSING" {
+		return "Unknown" // We don't check for uninstalled tools yet
+	}
+
+	// If checking a package
+	if latest, ok := d.outdatedCache[t.Package]; ok {
+		return latest
+	}
+
+	// If not in outdated list, and we have a local version,
+	// it usually means Local is Latest.
+	if d.hasWarmedUp {
+		return localVersion
+	}
+
+	return "Checking..."
 }
 
 func (d *Detector) GetLocalVersion(t core.Tool) string {
@@ -139,7 +244,7 @@ func runCmd(name string, args ...string) string {
 	if err != nil {
 		return "MISSING"
 	}
-	
+
 	// Use robust version parser
 	output := strings.TrimSpace(out.String())
 	return CleanVersionString(output)

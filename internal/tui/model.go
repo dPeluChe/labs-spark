@@ -16,8 +16,8 @@ type sessionState int
 const (
 	stateSplash sessionState = iota
 	stateMain
-	stateSearch   // Search/filter mode
-	statePreview  // Dry-run preview mode
+	stateSearch  // Search/filter mode
+	statePreview // Dry-run preview mode
 	stateConfirm
 	stateUpdating
 	stateSummary
@@ -32,6 +32,8 @@ type CheckResultMsg struct {
 	Message       string
 }
 
+type WarmUpFinishedMsg struct{}
+
 type UpdateResultMsg struct {
 	Index   int
 	Success bool
@@ -42,6 +44,7 @@ type Model struct {
 	state         sessionState
 	items         []core.ToolState // Using core.ToolState instead of local duplicate
 	detector      *updater.Detector
+	executor      *updater.Executor
 	cursor        int
 	checked       map[int]bool
 	quitting      bool
@@ -49,11 +52,11 @@ type Model struct {
 	height        int
 	loading       int
 	updating      int
-	totalUpdate   int           // Total items to update
+	totalUpdate   int            // Total items to update
 	progress      progress.Model // Progress bar component
-	searchQuery   string        // Current search query
-	filteredItems []int         // Indices of filtered items
-	splashFrame   int           // Current animation frame for splash screen
+	searchQuery   string         // Current search query
+	filteredItems []int          // Indices of filtered items
+	splashFrame   int            // Current animation frame for splash screen
 }
 
 func NewModel() Model {
@@ -79,23 +82,54 @@ func NewModel() Model {
 		state:    stateSplash,
 		items:    states,
 		detector: updater.NewDetector(),
+		executor: updater.NewExecutor(),
 		checked:  make(map[int]bool),
 		loading:  len(inv),
 		progress: prog,
 	}
 }
 
-func (m Model) checkVersion(i int) tea.Cmd {
+func (m Model) checkLocalVersion(i int) tea.Cmd {
 	return func() tea.Msg {
 		t := m.items[i].Tool
 		local := m.detector.GetLocalVersion(t)
+
 		status := core.StatusInstalled
 		message := ""
 		if local == "MISSING" {
 			status = core.StatusMissing
 			message = "Not installed"
 		}
-		remote := "Latest"
+
+		return CheckResultMsg{
+			Index:         i,
+			LocalVersion:  local,
+			RemoteVersion: "...", // Pending remote check
+			Status:        status,
+			Message:       message,
+		}
+	}
+}
+
+func (m Model) checkRemoteVersion(i int) tea.Cmd {
+	return func() tea.Msg {
+		t := m.items[i].Tool
+		local := m.items[i].LocalVersion
+
+		// If missing, we still might want to know latest version
+		remote := m.detector.GetRemoteVersion(t, local)
+
+		status := m.items[i].Status
+		message := m.items[i].Message
+
+		// If remote is different from local and not checking/unknown, assume update
+		if remote != "Unknown" && remote != "Checking..." && remote != local {
+			if local != "MISSING" {
+				status = core.StatusOutdated
+				message = "Update available"
+			}
+		}
+
 		return CheckResultMsg{
 			Index:         i,
 			LocalVersion:  local,
@@ -108,10 +142,14 @@ func (m Model) checkVersion(i int) tea.Cmd {
 
 func (m Model) performUpdate(i int) tea.Cmd {
 	return func() tea.Msg {
-		// Simulate realistic update time (3-5 seconds)
-		// This makes progress bar visible during updates
-		time.Sleep(time.Second * 4)
-		return UpdateResultMsg{Index: i, Success: true, Message: "Updated"}
+		t := m.items[i].Tool
+		if err := m.executor.Update(t); err != nil {
+			return UpdateResultMsg{Index: i, Success: false, Message: err.Error()}
+		}
+
+		// Re-check version to confirm
+		newVer := m.detector.GetLocalVersion(t)
+		return UpdateResultMsg{Index: i, Success: true, Message: "Updated to " + newVer}
 	}
 }
 
@@ -136,12 +174,27 @@ func (m *Model) startUpdates() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m Model) checkAllVersions() tea.Cmd {
+func (m Model) checkAllLocalVersions() tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range m.items {
-		cmds = append(cmds, m.checkVersion(i))
+		cmds = append(cmds, m.checkLocalVersion(i))
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m Model) checkAllRemoteVersions() tea.Cmd {
+	var cmds []tea.Cmd
+	for i := range m.items {
+		cmds = append(cmds, m.checkRemoteVersion(i))
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m Model) warmUpCache() tea.Cmd {
+	return func() tea.Msg {
+		m.detector.WarmUpCache()
+		return WarmUpFinishedMsg{}
+	}
 }
 
 type TickMsg time.Time
@@ -167,7 +220,7 @@ func refreshTick() tea.Cmd {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tick(), animateSplash(), m.checkAllVersions())
+	return tea.Batch(tick(), animateSplash(), m.checkAllLocalVersions(), m.warmUpCache())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -180,6 +233,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.progress.Width < 40 {
 			m.progress.Width = 40
 		}
+
+	case WarmUpFinishedMsg:
+		return m, m.checkAllRemoteVersions()
 
 	case CheckResultMsg:
 		m.items[msg.Index].LocalVersion = msg.LocalVersion
@@ -331,15 +387,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 				}
 			}
-		
-		case "c", "C": m.jumpToCategory(core.CategoryCode)
-		case "t", "T": m.jumpToCategory(core.CategoryTerm)
-		case "i", "I": m.jumpToCategory(core.CategoryIDE)
-		case "p", "P": m.jumpToCategory(core.CategoryProd)
-		case "f", "F": m.jumpToCategory(core.CategoryInfra)
-		case "u", "U": m.jumpToCategory(core.CategoryUtils)
-		case "r", "R": m.jumpToCategory(core.CategoryRuntime)
-		case "s", "S": m.jumpToCategory(core.CategorySys)
+
+		case "c", "C":
+			m.jumpToCategory(core.CategoryCode)
+		case "t", "T":
+			m.jumpToCategory(core.CategoryTerm)
+		case "i", "I":
+			m.jumpToCategory(core.CategoryIDE)
+		case "p", "P":
+			m.jumpToCategory(core.CategoryProd)
+		case "f", "F":
+			m.jumpToCategory(core.CategoryInfra)
+		case "u", "U":
+			m.jumpToCategory(core.CategoryUtils)
+		case "r", "R":
+			m.jumpToCategory(core.CategoryRuntime)
+		case "s", "S":
+			m.jumpToCategory(core.CategorySys)
 
 		case "tab":
 			currentCat := m.items[m.cursor].Tool.Category
@@ -350,27 +414,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.cursor = 0
-			
+
 		case " ":
 			if _, ok := m.checked[m.cursor]; ok {
 				delete(m.checked, m.cursor)
 			} else {
 				m.checked[m.cursor] = true
 			}
-		
+
 		case "g", "G", "a", "A":
 			// Toggle selection for all items in current category
 			currentCat := m.items[m.cursor].Tool.Category
 			allSelected := true
 			for i, item := range m.items {
 				if item.Tool.Category == currentCat {
-					if !m.checked[i] { allSelected = false; break }
+					if !m.checked[i] {
+						allSelected = false
+						break
 					}
+				}
 			}
 			for i, item := range m.items {
 				if item.Tool.Category == currentCat {
-					if allSelected { delete(m.checked, i) } else { m.checked[i] = true }
+					if allSelected {
+						delete(m.checked, i)
+					} else {
+						m.checked[i] = true
 					}
+				}
 			}
 
 		case "d", "D":
@@ -385,8 +456,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "enter":
-			if m.loading > 0 { return m, nil }
-			if len(m.checked) == 0 { m.checked[m.cursor] = true }
+			if m.loading > 0 {
+				return m, nil
+			}
+			if len(m.checked) == 0 {
+				m.checked[m.cursor] = true
+			}
 
 			hasCritical := false
 			for i := range m.items {
@@ -495,4 +570,3 @@ func (m Model) View() string {
 		return m.ViewMain()
 	}
 }
-
