@@ -201,21 +201,61 @@ func (d *Detector) getAntigravityVersion() string {
 
 // getCliToolVersion detects version for standard CLI tools
 func (d *Detector) getCliToolVersion(t core.Tool) string {
-	// Check if binary exists in PATH
+	// 1. Try finding binary in PATH
 	path, err := exec.LookPath(t.Binary)
-	if err != nil {
-		return "MISSING"
+	if err == nil && path != "" {
+		// Try standard --version
+		output := runCmd(t.Binary, "--version")
+		if output != "" && output != "MISSING" && output != "Unknown" {
+			return ParseToolSpecificVersion(t.Binary, output)
+		}
+		
+		// ... (version / -v checks) ...
 	}
-	_ = path
 
-	// Run --version command
-	output := runCmd(t.Binary, "--version")
-	if output == "MISSING" {
-		return "MISSING"
+	// 1.5 Fallback: Check ~/.local/bin explicitly (Common for Toad, Droid, Python tools)
+	home := os.Getenv("HOME")
+	localBin := home + "/.local/bin/" + t.Binary
+	if _, err := os.Stat(localBin); err == nil {
+		output := runCmd(localBin, "--version")
+		if output != "" && output != "MISSING" {
+			return ParseToolSpecificVersion(t.Binary, output)
+		}
 	}
 
-	// Use tool-specific parser if available, otherwise generic
-	return ParseToolSpecificVersion(t.Binary, output)
+	// 2. Fallback: Check NPM Global List (if it's an NPM tool)
+	if t.Method == core.MethodNpmPkg || t.Method == core.MethodNpmSys || t.Package != "" {
+		// ... existing npm logic ...
+		cmd := exec.Command("npm", "list", "-g", "--depth=0", "--json", t.Package)
+		out, err := cmd.Output()
+		if err == nil {
+			outStr := string(out)
+			if strings.Contains(outStr, "\"version\":") {
+				parts := strings.Split(outStr, "\"version\":")
+				if len(parts) > 1 {
+					ver := strings.Split(parts[1], "\"")[1]
+					return CleanVersionString(ver)
+				}
+			}
+		}
+	}
+
+	// 3. Fallback: Check Homebrew explicitly (if it's a Brew tool)
+	if t.Method == core.MethodBrew || t.Method == core.MethodBrewPkg {
+		// brew list --versions <package>
+		// Output: "kubernetes-cli 1.28.2"
+		cmd := exec.Command("brew", "list", "--versions", t.Package)
+		out, err := cmd.Output()
+		if err == nil && len(out) > 0 {
+			fields := strings.Fields(string(out))
+			if len(fields) >= 2 {
+				// The version is usually the second field
+				return CleanVersionString(fields[len(fields)-1])
+			}
+		}
+	}
+
+	return "MISSING"
 }
 
 // Helper functions
@@ -234,18 +274,27 @@ func getAppVersion(appPath string) string {
 }
 
 func runCmd(name string, args ...string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// Increase timeout to 5 seconds for slower tools (AI runtimes)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	var out bytes.Buffer
+	var stderr bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	
 	err := cmd.Run()
 	if err != nil {
-		return "MISSING"
+		// If fails, return empty to signal caller to try fallback or return MISSING
+		return ""
 	}
-
-	// Use robust version parser
+	
+	// Some tools print version to stderr (e.g. java sometimes, or python)
 	output := strings.TrimSpace(out.String())
+	if output == "" {
+		output = strings.TrimSpace(stderr.String())
+	}
+	
 	return CleanVersionString(output)
 }

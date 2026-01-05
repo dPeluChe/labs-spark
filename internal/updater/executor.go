@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/dpeluche/spark/internal/core"
@@ -32,11 +33,24 @@ func (e *Executor) Update(t core.Tool) error {
 		return e.updateNpm(ctx, t) // Claude is an NPM package
 	case core.MethodOmz:
 		return e.updateOmz(ctx)
-	case core.MethodManual, core.MethodDroid, core.MethodToad, core.MethodOpencode:
+	case core.MethodToad:
+		return e.updateToad(ctx)
+	case core.MethodManual, core.MethodDroid, core.MethodOpencode:
 		return fmt.Errorf("manual update required (check vendor portal)")
 	default:
 		return fmt.Errorf("update method %s not implemented", t.Method)
 	}
+}
+
+func (e *Executor) updateToad(ctx context.Context) error {
+	// Toad (by Batrachian AI) installs via script to ~/.local/bin
+	// curl -fsSL https://batrachian.ai/install | sh
+	
+	cmd := exec.CommandContext(ctx, "sh", "-c", "curl -fsSL https://batrachian.ai/install | sh")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("toad update failed: %s: %v", string(output), err)
+	}
+	return nil
 }
 
 func (e *Executor) updateBrew(ctx context.Context, t core.Tool) error {
@@ -73,8 +87,19 @@ func (e *Executor) updateNpm(ctx context.Context, t core.Tool) error {
 	}
 
 	cmd := exec.CommandContext(ctx, "npm", "install", "-g", pkg+"@latest")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("npm install failed: %s: %v", string(output), err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Auto-recovery for EEXIST (broken symlinks or permissions)
+		outputStr := string(output)
+		if strings.Contains(outputStr, "EEXIST") {
+			// Retry with --force
+			cmdForce := exec.CommandContext(ctx, "npm", "install", "-g", pkg+"@latest", "--force")
+			if outputForce, errForce := cmdForce.CombinedOutput(); errForce != nil {
+				return fmt.Errorf("npm install failed (even with --force): %s: %v", string(outputForce), errForce)
+			}
+			return nil // Success with force
+		}
+		return fmt.Errorf("npm install failed: %s: %v", outputStr, err)
 	}
 	return nil
 }

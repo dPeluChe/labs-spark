@@ -19,16 +19,9 @@ func (m Model) ViewMain() string {
 	}
 
 	grid := m.renderGrid()
-
-	// Show progress bar during updates (BELOW the grid)
-	var progressBar string
-	if m.state == stateUpdating && m.totalUpdate > 0 {
-		progressBar = "\n\n" + m.renderProgressBar() + "\n"
-	}
-
 	helpBar := m.renderHelpBar()
 
-	content := header + "\n\n" + searchBar + grid + progressBar + helpBar
+	content := header + "\n\n" + searchBar + grid + helpBar
 	return appStyle.Render(content)
 }
 
@@ -37,21 +30,115 @@ func (m Model) View() string {
 		return ""
 	}
 
+	// 1. Render the base dashboard
+	bg := m.ViewMain()
+
 	switch m.state {
 	case stateSplash:
 		return m.ViewSplash()
 	case statePreview:
 		return m.ViewPreview()
 	case stateConfirm:
-		return m.overlayModal("")
+		return m.overlayModal(bg)
 	case stateUpdating:
-		return m.ViewMain()
+		// Render actual overlay
+		modal := m.renderUpdatingModalContent()
+		return m.composite(bg, modal, cBlue)
 	case stateSummary:
-		// Render main view as background with summary overlay
-		return m.overlaySummaryModal(m.ViewMain())
+		// Render summary overlay
+		modal := m.renderSummaryModalContent()
+		return m.composite(bg, modal, cPurple)
 	default:
-		return m.ViewMain()
+		return bg
 	}
+}
+
+// composite merges a modal box over a background by replacing the middle lines.
+// This is the most stable method to avoid rendering artifacts/ghosting.
+func (m Model) composite(background, foreground string, borderColor lipgloss.Color) string {
+	// 1. Force Background to fill screen to ensure line count is stable
+	// This ensures we overwrite ANY previous content on the screen (fixing ghost bars)
+	bg := lipgloss.Place(m.width, m.height, lipgloss.Top, lipgloss.Left, background)
+	bgLines := strings.Split(bg, "\n")
+	
+	// 2. Render Modal Centered within a Full-Width Strip
+	// We use a dark background for the strip to make the modal pop
+	modalStrip := lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Background(lipgloss.Color("#1A1B26")). // Matches modal background
+		Render(foreground)
+	
+	modalLines := strings.Split(modalStrip, "\n")
+
+	// 3. Calculate positioning
+	startLine := (len(bgLines) - len(modalLines)) / 2
+	if startLine < 0 { startLine = 0 }
+
+	// 4. Replace lines (Overlay Strip)
+	for i, line := range modalLines {
+		targetIdx := startLine + i
+		if targetIdx < len(bgLines) {
+			bgLines[targetIdx] = line
+		}
+	}
+
+	return strings.Join(bgLines, "\n")
+}
+
+// renderUpdatingModalContent returns just the inner part of the update modal
+func (m Model) renderUpdatingModalContent() string {
+	title := lipgloss.NewStyle().
+		Foreground(cBlue).
+		Bold(true).
+		Render("⟳ SYSTEM UPDATE IN PROGRESS")
+
+	content := m.renderProgressBar()
+
+	return lipgloss.JoinVertical(lipgloss.Center, title, "\n", content)
+}
+
+// renderSummaryModalContent returns just the inner part of the summary modal
+func (m Model) renderSummaryModalContent() string {
+	successCount := 0
+	failCount := 0
+	var failureDetails []string
+
+	for _, item := range m.items {
+		if item.Status == core.StatusUpdated {
+			successCount++
+		} else if item.Status == core.StatusFailed {
+			failCount++
+			failureDetails = append(failureDetails, fmt.Sprintf("• %s: %s", item.Tool.Name, item.Message))
+		}
+	}
+
+	title := lipgloss.NewStyle().
+		Background(cPurple).
+		Foreground(cWhite).
+		Bold(true).
+		Padding(0, 2). // Symmetrical padding
+		Render("UPDATE COMPLETE")
+
+	stats := lipgloss.NewStyle().
+		MarginTop(1).
+		Render(fmt.Sprintf("Successful: %d  |  Failed: %d", successCount, failCount))
+	
+	errors := ""
+	if len(failureDetails) > 0 {
+		errors = "\n" + lipgloss.NewStyle().Foreground(cRed).Render(strings.Join(failureDetails, "\n")) + "\n"
+	}
+	
+	hint := lipgloss.NewStyle().
+		Foreground(cGray).
+		MarginTop(1).
+		Render("[Press ENTER to close]")
+
+	return lipgloss.JoinVertical(lipgloss.Center, title, stats, errors, hint)
+}
+// overlayUpdatingModal is now deprecated by composite system, but kept for signature if needed
+func (m Model) overlayUpdatingModal(background string) string {
+	return m.View() // Recursive but switch handles it
 }
 
 // overlaySummaryModal renders the results over the main content
@@ -180,14 +267,50 @@ func (m Model) renderSearchBar() string {
 
 // --- Progress Bar Rendering ---
 
+// renderIndeterminateBar creates a "scanner" animation: [  ====   ]
+func (m Model) renderIndeterminateBar(width int) string {
+	// Effective width for the moving part
+	trackWidth := width - 2 // Minus brackets
+	blockWidth := 10
+	
+	// Calculate position based on splashFrame
+	pos := m.splashFrame % (trackWidth + blockWidth)
+	
+	// Build the track
+	var sb strings.Builder
+	sb.WriteString("[")
+	
+	for i := 0; i < trackWidth; i++ {
+		effectivePos := pos - blockWidth
+		if i >= effectivePos && i < pos {
+			sb.WriteString("▓") // Moving block character
+		} else {
+			sb.WriteString("░") // Empty track character
+		}
+	}
+	
+	sb.WriteString("]")
+	return lipgloss.NewStyle().Foreground(cBlue).Render(sb.String())
+}
+
 func (m Model) renderProgressBar() string {
 	// Calculate progress: completed / total
 	completed := m.totalUpdate - m.updating
 	percent := float64(completed) / float64(m.totalUpdate)
 
-	progressBarView := m.progress.ViewAs(percent)
+	// If we are working on something, we want movement.
+	// Standard progress bar is great for > 0%, but for 0% or between steps, 
+	// we want to show activity on the current step.
+	var barView string
+	
+	// Use indeterminate animation if we are active but bar looks static (start or 1 item)
+	if m.totalUpdate <= 1 || percent == 0 {
+		barView = m.renderIndeterminateBar(50) 
+	} else {
+		barView = m.progress.ViewAs(percent)
+	}
 
-	// Format: "Updating: 5/10 [=========>     ] 50%"
+	// Format: "Progress: 0/1 completed"
 	label := fmt.Sprintf("Progress: %d/%d completed", completed, m.totalUpdate)
 	
 	currentTool := ""
@@ -195,9 +318,31 @@ func (m Model) renderProgressBar() string {
 		currentTool = fmt.Sprintf("• Processing: %s", m.items[m.currentUpdate].Tool.Name)
 	}
 
+	// Fake Terminal Output
+	termContent := ""
+	if m.currentLog != "" {
+		termContent = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#A8A8A8")). // Terminal grey
+			Background(cDark).
+			Padding(0, 1).
+			Width(60).
+			Render(m.currentLog)
+	} else {
+		termContent = lipgloss.NewStyle().
+			Foreground(cGray).
+			Render("Waiting for jobs...")
+	}
+	
+	termBox := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true). // Left border only
+		BorderForeground(cPurple).
+		MarginTop(1).
+		PaddingLeft(1).
+		Render(termContent)
+
 	return lipgloss.NewStyle().Foreground(cBlue).Render(label) + 
 		lipgloss.NewStyle().Foreground(cYellow).Bold(true).Render(" "+currentTool) + 
-		"\n" + progressBarView
+		"\n" + barView + "\n" + termBox
 }
 
 // --- Header Rendering ---

@@ -35,9 +35,10 @@ type CheckResultMsg struct {
 type WarmUpFinishedMsg struct{}
 
 type UpdateResultMsg struct {
-	Index   int
-	Success bool
-	Message string
+	Index      int
+	Success    bool
+	Message    string
+	NewVersion string // Capture the new version string
 }
 
 type Model struct {
@@ -55,6 +56,7 @@ type Model struct {
 	totalUpdate   int            // Total items to update
 	updateQueue   []int          // Queue of items to update sequentially
 	currentUpdate int            // Index of the item currently being updated
+	currentLog    string         // Log message showing current command/action
 	progress      progress.Model // Progress bar component
 	searchQuery   string         // Current search query
 	filteredItems []int          // Indices of filtered items
@@ -151,7 +153,12 @@ func (m Model) performUpdate(i int) tea.Cmd {
 
 		// Re-check version to confirm
 		newVer := m.detector.GetLocalVersion(t)
-		return UpdateResultMsg{Index: i, Success: true, Message: "Updated to " + newVer}
+		return UpdateResultMsg{
+			Index:      i,
+			Success:    true,
+			Message:    "Updated to " + newVer,
+			NewVersion: newVer,
+		}
 	}
 }
 
@@ -193,8 +200,22 @@ func (m *Model) processNextUpdate() tea.Cmd {
 	m.updateQueue = m.updateQueue[1:]
 	m.currentUpdate = index
 
-	// Visual indication that this specific one is active
-	// m.items[index].Status is already StatusUpdating, but we can make it distinctive in View if needed.
+	// Set descriptive log message
+	tool := m.items[index].Tool
+	switch tool.Method {
+	case core.MethodBrew, core.MethodBrewPkg:
+		m.currentLog = "> brew upgrade " + tool.Package
+	case core.MethodNpmPkg, core.MethodNpmSys, core.MethodClaude:
+		m.currentLog = "> npm install -g " + tool.Package + "@latest"
+	case core.MethodOmz:
+		m.currentLog = "> $ZSH/tools/upgrade.sh"
+	case core.MethodToad:
+		m.currentLog = "> curl -fsSL batrachian.ai/install | sh"
+	case core.MethodMacApp:
+		m.currentLog = "> brew upgrade --cask " + tool.Package
+	default:
+		m.currentLog = "> Updating " + tool.Name + "..."
+	}
 
 	return m.performUpdate(index)
 }
@@ -274,6 +295,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Success {
 			m.items[msg.Index].Status = core.StatusUpdated
 			m.items[msg.Index].Message = msg.Message
+			// Update the version in the model immediately
+			if msg.NewVersion != "" && msg.NewVersion != "MISSING" {
+				m.items[msg.Index].LocalVersion = msg.NewVersion
+				// Assuming successful update brings it to latest known remote
+				m.items[msg.Index].RemoteVersion = msg.NewVersion 
+			}
 		} else {
 			m.items[msg.Index].Status = core.StatusFailed
 			m.items[msg.Index].Message = msg.Message
@@ -350,6 +377,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.checked = make(map[int]bool)
 			m.totalUpdate = 0
 			m.updating = 0
+			
+			// Clean up statuses: Reset Updated/Failed items
+			for i := range m.items {
+				if m.items[i].Status == core.StatusUpdated || m.items[i].Status == core.StatusFailed {
+					m.items[i].Message = "" // Clear messages
+					
+					// Determine correct resting state based on versions
+					if m.items[i].LocalVersion == "MISSING" {
+						m.items[i].Status = core.StatusMissing
+					} else if m.items[i].RemoteVersion != "..." && 
+							  m.items[i].RemoteVersion != "Checking..." && 
+							  m.items[i].RemoteVersion != "Unknown" &&
+							  m.items[i].RemoteVersion != m.items[i].LocalVersion {
+						m.items[i].Status = core.StatusOutdated
+					} else {
+						m.items[i].Status = core.StatusInstalled
+					}
+				}
+			}
+			
 			return m, nil
 		}
 
@@ -527,13 +574,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Keep refreshing while updating to animate progress bar and spinner
 		if m.state == stateUpdating {
 			m.splashFrame++ // Animate spinner
-			
-			// Update progress bar animation if needed (though mostly static until count changes)
-			// Sending a TickMsg to progress model helps if it has internal animation
-			// cmd := m.progress.SetPercent(float64(m.totalUpdate-m.updating) / float64(m.totalUpdate))
-			
-			return m, refreshTick()
+
+			// Animate progress bar (diagonal stripes)
+			cmd := m.progress.SetPercent(float64(m.totalUpdate-m.updating) / float64(m.totalUpdate))
+
+			return m, tea.Batch(refreshTick(), cmd)
 		}
+
+	case progress.FrameMsg:
+		// Handle progress bar internal animation frames
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
 	}
 	return m, nil
 }
